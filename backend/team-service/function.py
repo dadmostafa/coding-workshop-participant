@@ -49,6 +49,8 @@ from mongo_service import get_db, reset_client
 from auth import (
     get_current_user, create_token, hash_password, verify_password,
     can_read, can_write, can_delete, can_admin,
+    can_manage_team, can_manage_members, can_manage_achievements,
+    permission_error, auth_error, get_role_info,
 )
 
 logger = logging.getLogger()
@@ -183,7 +185,7 @@ def handle_seed(event, db):
 
 def handle_users(event, method, path_parts, db, user):
     if not can_admin(user):
-        return err(403, "Admin access required")
+        return permission_error("admin")
 
     col = db["users"]
 
@@ -246,7 +248,7 @@ def handle_users(event, method, path_parts, db, user):
 
 def handle_teams(event, method, path_parts, db, user):
     if not can_read(user):
-        return err(401, "Authentication required")
+        return auth_error()
 
     col = db["teams"]
 
@@ -257,12 +259,12 @@ def handle_teams(event, method, path_parts, db, user):
             query["name"] = {"$regex": q["search"], "$options": "i"}
         if q.get("location"):
             query["location"] = {"$regex": q["location"], "$options": "i"}
-        docs = [to_doc(d) for d in col.find(query).sort([("name", 1)])]
+        docs = [to_doc(d) for d in col.find(query).sort("name", 1)]
         return resp(200, docs)
 
     if method == "POST":
         if not can_write(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("contributor")
         body = parse_body(event)
         for f in ["name"]:
             if not (body.get(f) or "").strip():
@@ -297,7 +299,7 @@ def handle_teams(event, method, path_parts, db, user):
 
     if method == "PUT":
         if not can_write(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("contributor")
         body = parse_body(event)
         update = {k: body[k] for k in [
             "name", "description", "location", "department",
@@ -312,7 +314,7 @@ def handle_teams(event, method, path_parts, db, user):
 
     if method == "DELETE":
         if not can_delete(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("manager")
         result = col.delete_one({"_id": ObjectId(tid)})
         if result.deleted_count == 0:
             return err(404, "Team not found")
@@ -325,7 +327,7 @@ def handle_teams(event, method, path_parts, db, user):
 
 def handle_members(event, method, path_parts, db, user):
     if not can_read(user):
-        return err(401, "Authentication required")
+        return auth_error()
 
     col = db["members"]
 
@@ -340,12 +342,12 @@ def handle_members(event, method, path_parts, db, user):
                 {"email": {"$regex": q["search"], "$options": "i"}},
                 {"role": {"$regex": q["search"], "$options": "i"}},
             ]
-        docs = [to_doc(d) for d in col.find(query).sort([("name", 1)])]
+        docs = [to_doc(d) for d in col.find(query).sort("name", 1)]
         return resp(200, docs)
 
     if method == "POST":
         if not can_write(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("contributor")
         body = parse_body(event)
         for f in ["name", "team_id"]:
             if not (body.get(f) or "").strip():
@@ -381,7 +383,7 @@ def handle_members(event, method, path_parts, db, user):
 
     if method == "PUT":
         if not can_write(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("contributor")
         body = parse_body(event)
         update = {k: body[k] for k in [
             "name", "email", "role", "location",
@@ -396,7 +398,7 @@ def handle_members(event, method, path_parts, db, user):
 
     if method == "DELETE":
         if not can_delete(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("manager")
         result = col.delete_one({"_id": ObjectId(mid)})
         if result.deleted_count == 0:
             return err(404, "Member not found")
@@ -409,7 +411,7 @@ def handle_members(event, method, path_parts, db, user):
 
 def handle_achievements(event, method, path_parts, db, user):
     if not can_read(user):
-        return err(401, "Authentication required")
+        return auth_error()
 
     col = db["achievements"]
 
@@ -422,12 +424,12 @@ def handle_achievements(event, method, path_parts, db, user):
             query["month"] = int(q["month"])
         if q.get("year"):
             query["year"] = int(q["year"])
-        docs = [to_doc(d) for d in col.find(query).sort([("year", -1)])]
+        docs = [to_doc(d) for d in col.find(query).sort("year", -1)]
         return resp(200, docs)
 
     if method == "POST":
         if not can_write(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("contributor")
         body = parse_body(event)
         for f in ["title", "team_id", "month", "year"]:
             if body.get(f) in (None, ""):
@@ -468,7 +470,7 @@ def handle_achievements(event, method, path_parts, db, user):
 
     if method == "PUT":
         if not can_write(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("contributor")
         body = parse_body(event)
         update = {k: body[k] for k in [
             "title", "description", "month", "year", "impact", "team_id"
@@ -482,7 +484,7 @@ def handle_achievements(event, method, path_parts, db, user):
 
     if method == "DELETE":
         if not can_delete(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("manager")
         result = col.delete_one({"_id": ObjectId(aid)})
         if result.deleted_count == 0:
             return err(404, "Achievement not found")
@@ -495,7 +497,7 @@ def handle_achievements(event, method, path_parts, db, user):
 
 def handle_metadata(event, method, path_parts, db, user):
     if not can_read(user):
-        return err(401, "Authentication required")
+        return auth_error()
 
     col = db["metadata"]
 
@@ -509,7 +511,7 @@ def handle_metadata(event, method, path_parts, db, user):
 
     if method == "POST":
         if not can_write(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("contributor")
         body = parse_body(event)
         for f in ["team_id", "key", "value"]:
             if body.get(f) in (None, ""):
@@ -541,7 +543,7 @@ def handle_metadata(event, method, path_parts, db, user):
 
     if method == "PUT":
         if not can_write(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("contributor")
         body = parse_body(event)
         update = {k: body[k] for k in ["key", "value", "category", "team_id"] if k in body}
         update["updated_at"] = datetime.now(timezone.utc)
@@ -553,7 +555,7 @@ def handle_metadata(event, method, path_parts, db, user):
 
     if method == "DELETE":
         if not can_delete(user):
-            return err(403, "Insufficient permissions")
+            return permission_error("manager")
         result = col.delete_one({"_id": ObjectId(mid)})
         if result.deleted_count == 0:
             return err(404, "Metadata not found")
@@ -562,11 +564,21 @@ def handle_metadata(event, method, path_parts, db, user):
     return err(405, "Method not allowed")
 
 
+
+def handle_roles():
+    """Return all available roles and their permissions — public endpoint."""
+    from auth import get_role_info
+    roles = ["viewer", "contributor", "manager", "admin"]
+    return resp(200, {
+        "roles": [get_role_info(r) for r in roles],
+        "description": "Roles in ascending order of privilege"
+    })
+
 # ── Stats / dashboard aggregations ───────────────────────────────────────────
 
 def handle_stats(db, user):
     if not can_read(user):
-        return err(401, "Authentication required")
+        return auth_error()
 
     teams = list(db["teams"].find())
     members = list(db["members"].find())
@@ -674,6 +686,9 @@ def handler(event=None, context=None):
 
         if resource == "stats":
             return handle_stats(db, user)
+
+        if resource == "roles":
+            return handle_roles()
 
         if resource in dispatch:
             return dispatch[resource](event, method, sub_parts, db, user)
