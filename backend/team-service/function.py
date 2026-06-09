@@ -47,10 +47,14 @@ from datetime import datetime, timezone
 
 from mongo_service import get_db, reset_client
 from auth import (
-    get_current_user, create_token, hash_password, verify_password,
+    get_current_user, create_token, create_access_token, create_refresh_token,
+    hash_password, verify_password, revoke_token, refresh_access_token,
+    extract_token,
     can_read, can_write, can_delete, can_admin,
     can_manage_team, can_manage_members, can_manage_achievements,
-    permission_error, auth_error, get_role_info,
+    permission_error, auth_error, locked_error, get_role_info,
+    is_account_locked, record_failed_attempt, clear_failed_attempts,
+    MAX_FAILED_ATTEMPTS, ACCESS_TOKEN_EXPIRY,
 )
 
 logger = logging.getLogger()
@@ -159,19 +163,38 @@ def handle_login(event, db):
     if not username or not password:
         return err(400, "username and password are required")
 
+    # Check if account is locked
+    locked, minutes = is_account_locked(username)
+    if locked:
+        return locked_error(minutes)
+
     user = db["users"].find_one({"username": username})
     if not user or not verify_password(password, user["password"]):
-        return err(401, "Invalid credentials")
+        attempts = record_failed_attempt(username)
+        remaining = MAX_FAILED_ATTEMPTS - attempts
+        if remaining > 0:
+            return err(401, f"Invalid credentials. {remaining} attempt(s) remaining before lockout.")
+        return err(401, "Invalid credentials. Account is now locked.")
 
-    token = create_token(str(user["_id"]), user["username"], user["role"])
+    # Successful login — clear failed attempts
+    clear_failed_attempts(username)
+
+    user_id  = str(user["_id"])
+    uname    = user["username"]
+    role     = user["role"]
+
     return resp(200, {
-        "token": token,
+        "access_token":  create_access_token(user_id, uname, role),
+        "refresh_token": create_refresh_token(user_id, uname),
+        "token_type":    "Bearer",
+        "expires_in":    ACCESS_TOKEN_EXPIRY * 60,
+        "token":         create_access_token(user_id, uname, role),  # backwards compat
         "user": {
-            "id": str(user["_id"]),
-            "username": user["username"],
-            "role": user["role"],
+            "id":       user_id,
+            "username": uname,
+            "role":     role,
             "full_name": user.get("full_name", ""),
-            "email": user.get("email", ""),
+            "email":    user.get("email", ""),
         }
     })
 
@@ -673,6 +696,20 @@ def handler(event=None, context=None):
                 return handle_login(event, db)
             if action == "seed" and method == "POST":
                 return handle_seed(event, db)
+            if action == "refresh" and method == "POST":
+                body = parse_body(event)
+                refresh_tok = body.get("refresh_token", "")
+                if not refresh_tok:
+                    return err(400, "refresh_token is required")
+                result = refresh_access_token(refresh_tok, db)
+                if not result:
+                    return err(401, "Invalid or expired refresh token")
+                return resp(200, result)
+            if action == "logout" and method == "POST":
+                token = extract_token(event)
+                if token:
+                    revoke_token(token)
+                return resp(200, {"message": "Logged out successfully"})
             return err(404, "Auth endpoint not found")
 
         # Protected resources
