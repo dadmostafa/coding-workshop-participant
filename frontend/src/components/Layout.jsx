@@ -7,6 +7,7 @@ import {
 import {
   Dashboard, Groups, Person, EmojiEvents,
   AdminPanelSettings, Logout, Menu as MenuIcon,
+  Timeline, Security,
 } from '@mui/icons-material'
 import { useAuth } from '../context/AuthContext'
 
@@ -18,6 +19,7 @@ const NAV = [
   { label: 'Teams',        path: '/teams',        icon: <Groups /> },
   { label: 'Members',      path: '/members',      icon: <Person /> },
   { label: 'Achievements', path: '/achievements', icon: <EmojiEvents /> },
+  { label: 'Activity',     path: '/activity',     icon: <Timeline /> },
 ]
 
 const ROLE_COLORS = {
@@ -56,7 +58,7 @@ export default function Layout() {
   const [anchorEl,   setAnchorEl]   = useState(null)
 
   const navItems = isAdmin
-    ? [...NAV, { label: 'Users', path: '/users', icon: <AdminPanelSettings /> }]
+    ? [...NAV, { label: 'Audit Trail', path: '/audit', icon: <Security /> }, { label: 'Users', path: '/users', icon: <AdminPanelSettings /> }]
     : NAV
 
   const isActive = (path) =>

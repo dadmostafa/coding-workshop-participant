@@ -110,6 +110,141 @@ def qs(event: dict) -> dict:
     return event.get("queryStringParameters") or {}
 
 
+# ── Audit Log ─────────────────────────────────────────────────────────────────
+
+def log_audit(db, user: dict, action: str, resource: str, resource_id: str = None, 
+              changes: dict = None, details: str = None):
+    """
+    Record every mutation to the audit_log collection.
+    action:   CREATE | UPDATE | DELETE | LOGIN | LOGOUT | LOGIN_FAILED | EXPORT
+    resource: teams | members | achievements | metadata | users | auth
+    """
+    try:
+        db["audit_log"].insert_one({
+            "action":      action,
+            "resource":    resource,
+            "resource_id": resource_id,
+            "user_id":     user.get("sub", "unknown") if user else "system",
+            "username":    user.get("username", "unknown") if user else "system",
+            "role":        user.get("role", "unknown") if user else "system",
+            "changes":     changes or {},
+            "details":     details or "",
+            "timestamp":   datetime.now(timezone.utc),
+            "ip":          "lambda",
+        })
+    except Exception as e:
+        logger.warning("Audit log failed: %s", e)
+
+
+# ── Audit Trail handler ───────────────────────────────────────────────────────
+
+def handle_audit(event, method, path_parts, db, user):
+    """
+    GET /audit          - list recent audit log entries (manager+)
+    GET /audit/{id}     - get single audit entry
+    Supports filters: ?resource= ?action= ?username= ?limit= ?from_date=
+    """
+    if not can_manage_team(user):
+        return permission_error("manager")
+
+    col = db["audit_log"]
+    q   = qs(event)
+
+    if method == "GET" and not path_parts:
+        query  = {}
+        limit  = min(int(q.get("limit", 50)), 200)
+
+        if q.get("resource"):
+            query["resource"] = q["resource"]
+        if q.get("action"):
+            query["action"] = q["action"].upper()
+        if q.get("username"):
+            query["username"] = {"$regex": q["username"], "$options": "i"}
+        if q.get("from_date"):
+            try:
+                from_dt = datetime.fromisoformat(q["from_date"])
+                query["timestamp"] = {"$gte": from_dt}
+            except ValueError:
+                return err(400, "Invalid from_date format. Use ISO 8601 e.g. 2026-01-01")
+
+        docs = list(col.find(query).sort([("timestamp", -1)]).limit(limit))
+        return resp(200, [to_doc(d) for d in docs])
+
+    if method == "GET" and path_parts:
+        aid = path_parts[0]
+        if not valid_oid(aid):
+            return err(400, "Invalid audit entry id")
+        doc = col.find_one({"_id": ObjectId(aid)})
+        if not doc:
+            return err(404, "Audit entry not found")
+        return resp(200, to_doc(doc))
+
+    return err(405, "Method not allowed")
+
+
+# ── Activity Feed handler ─────────────────────────────────────────────────────
+
+def handle_activity(db, user):
+    """
+    GET /activity - human-readable activity feed (viewer+)
+    Returns last 30 actions formatted as readable sentences.
+    """
+    if not can_read(user):
+        return auth_error()
+
+    col  = db["audit_log"]
+    docs = list(col.find({}).sort([("timestamp", -1)]).limit(30))
+
+    ACTION_LABELS = {
+        "CREATE": "created",
+        "UPDATE": "updated",
+        "DELETE": "deleted",
+        "LOGIN":  "logged in",
+        "LOGOUT": "logged out",
+        "LOGIN_FAILED": "failed to log in",
+        "EXPORT": "exported",
+    }
+
+    RESOURCE_LABELS = {
+        "teams":        "team",
+        "members":      "member",
+        "achievements": "achievement",
+        "metadata":     "metadata",
+        "users":        "user",
+        "auth":         "account",
+    }
+
+    feed = []
+    for d in docs:
+        action   = ACTION_LABELS.get(d.get("action", ""), d.get("action", "").lower())
+        resource = RESOURCE_LABELS.get(d.get("resource", ""), d.get("resource", ""))
+        username = d.get("username", "Someone")
+        ts       = d.get("timestamp")
+        details  = d.get("details", "")
+
+        # Build human-readable sentence
+        if d.get("action") in ("LOGIN", "LOGOUT", "LOGIN_FAILED"):
+            sentence = f"{username} {action}"
+        elif details:
+            sentence = f"{username} {action} {resource}: {details}"
+        else:
+            sentence = f"{username} {action} a {resource}"
+
+        feed.append({
+            "id":         str(d["_id"]),
+            "sentence":   sentence,
+            "action":     d.get("action"),
+            "resource":   d.get("resource"),
+            "resource_id":d.get("resource_id"),
+            "username":   username,
+            "role":       d.get("role"),
+            "timestamp":  ts.isoformat() if ts else None,
+            "changes":    d.get("changes", {}),
+        })
+
+    return resp(200, feed)
+
+
 # ── Seed / bootstrap ──────────────────────────────────────────────────────────
 
 def seed_admin(db):
@@ -171,6 +306,7 @@ def handle_login(event, db):
     user = db["users"].find_one({"username": username})
     if not user or not verify_password(password, user["password"]):
         attempts = record_failed_attempt(username)
+        log_audit(db, None, "LOGIN_FAILED", "auth", details=f"Failed login attempt for {username}")
         remaining = MAX_FAILED_ATTEMPTS - attempts
         if remaining > 0:
             return err(401, f"Invalid credentials. {remaining} attempt(s) remaining before lockout.")
@@ -182,6 +318,10 @@ def handle_login(event, db):
     user_id  = str(user["_id"])
     uname    = user["username"]
     role     = user["role"]
+
+    # Log successful login
+    log_audit(db, {"username": uname, "role": role, "sub": user_id}, 
+              "LOGIN", "auth", user_id, details=f"Login from {username}")
 
     return resp(200, {
         "access_token":  create_access_token(user_id, uname, role),
@@ -197,6 +337,7 @@ def handle_login(event, db):
             "email":    user.get("email", ""),
         }
     })
+
 
 
 def handle_seed(event, db):
@@ -308,6 +449,7 @@ def handle_teams(event, method, path_parts, db, user):
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
         doc.pop("_id", None)
+        log_audit(db, user, "CREATE", "teams", str(result.inserted_id), details=doc["name"])
         return resp(201, doc)
 
     tid = path_parts[0] if path_parts else None
@@ -332,6 +474,7 @@ def handle_teams(event, method, path_parts, db, user):
         result = col.update_one({"_id": ObjectId(tid)}, {"$set": update})
         if result.matched_count == 0:
             return err(404, "Team not found")
+        log_audit(db, user, "UPDATE", "teams", tid, changes=update, details=body.get("name", ""))
         doc = col.find_one({"_id": ObjectId(tid)})
         return resp(200, to_doc(doc))
 
@@ -341,6 +484,7 @@ def handle_teams(event, method, path_parts, db, user):
         result = col.delete_one({"_id": ObjectId(tid)})
         if result.deleted_count == 0:
             return err(404, "Team not found")
+        log_audit(db, user, "DELETE", "teams", tid, details=f"Deleted team {tid}")
         return resp(204, {})
 
     return err(405, "Method not allowed")
@@ -392,6 +536,7 @@ def handle_members(event, method, path_parts, db, user):
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
         doc.pop("_id", None)
+        log_audit(db, user, "CREATE", "members", str(result.inserted_id), details=doc["name"])
         return resp(201, doc)
 
     mid = path_parts[0] if path_parts else None
@@ -416,6 +561,7 @@ def handle_members(event, method, path_parts, db, user):
         result = col.update_one({"_id": ObjectId(mid)}, {"$set": update})
         if result.matched_count == 0:
             return err(404, "Member not found")
+        log_audit(db, user, "UPDATE", "members", mid, changes=update)
         doc = col.find_one({"_id": ObjectId(mid)})
         return resp(200, to_doc(doc))
 
@@ -425,6 +571,7 @@ def handle_members(event, method, path_parts, db, user):
         result = col.delete_one({"_id": ObjectId(mid)})
         if result.deleted_count == 0:
             return err(404, "Member not found")
+        log_audit(db, user, "DELETE", "members", mid)
         return resp(204, {})
 
     return err(405, "Method not allowed")
@@ -479,6 +626,7 @@ def handle_achievements(event, method, path_parts, db, user):
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
         doc.pop("_id", None)
+        log_audit(db, user, "CREATE", "achievements", str(result.inserted_id), details=doc["title"])
         return resp(201, doc)
 
     aid = path_parts[0] if path_parts else None
@@ -502,6 +650,7 @@ def handle_achievements(event, method, path_parts, db, user):
         result = col.update_one({"_id": ObjectId(aid)}, {"$set": update})
         if result.matched_count == 0:
             return err(404, "Achievement not found")
+        log_audit(db, user, "UPDATE", "achievements", aid, changes=update)
         doc = col.find_one({"_id": ObjectId(aid)})
         return resp(200, to_doc(doc))
 
@@ -511,6 +660,7 @@ def handle_achievements(event, method, path_parts, db, user):
         result = col.delete_one({"_id": ObjectId(aid)})
         if result.deleted_count == 0:
             return err(404, "Achievement not found")
+        log_audit(db, user, "DELETE", "achievements", aid)
         return resp(204, {})
 
     return err(405, "Method not allowed")
@@ -726,6 +876,12 @@ def handler(event=None, context=None):
 
         if resource == "roles":
             return handle_roles()
+
+        if resource == "audit":
+            return handle_audit(event, method, sub_parts, db, user)
+
+        if resource == "activity":
+            return handle_activity(db, user)
 
         if resource in dispatch:
             return dispatch[resource](event, method, sub_parts, db, user)
