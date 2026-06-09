@@ -79,7 +79,7 @@ class TestRBAC:
 
     def _db_with_teams(self, teams=None):
         mock_col = MagicMock()
-        mock_col.find.return_value = teams or []
+        mock_col.find.return_value = MagicMock(sort=MagicMock(return_value=teams or []))
         mock_col.count_documents.return_value = 1
         mock_db = MagicMock()
         mock_db.__getitem__ = lambda s, k: mock_col
@@ -157,7 +157,7 @@ class TestTeams:
 
     def _mock_db(self, find_result=None, find_one_result=None, delete_count=1):
         mock_col = MagicMock()
-        mock_col.find.return_value = find_result or []
+        mock_col.find.return_value = MagicMock(sort=MagicMock(return_value=find_result or []))
         mock_col.find_one.return_value = find_one_result
         mock_col.count_documents.return_value = 1
         ins = MagicMock()
@@ -255,7 +255,7 @@ class TestAchievements:
         ins = MagicMock()
         ins.inserted_id = ObjectId()
         mock_col.insert_one.return_value = ins
-        mock_col.find.return_value = []
+        mock_col.find.return_value = MagicMock(sort=MagicMock(return_value=[]))
         mock_db = MagicMock()
         mock_db.__getitem__ = lambda s, k: mock_col
         return mock_db
