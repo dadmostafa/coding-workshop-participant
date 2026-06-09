@@ -305,12 +305,39 @@ export default function Layout() {
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}
         PaperProps={{ sx: { bgcolor: '#1e2029', border: '1px solid #2a2d3e', borderRadius: 3, minWidth: 200 } }}>
         <Box sx={{ px: 2, py: 1.5 }}>
-          <Typography variant="body2" fontWeight={700}>{user?.full_name || user?.username}</Typography>
-          <Typography variant="caption" color="text.secondary">{user?.email}</Typography>
-          <Box sx={{ mt: 0.5 }}>
-            <Chip label={user?.role} size="small"
-              sx={{ bgcolor: `${ROLE_COLORS[user?.role]}20`, color: ROLE_COLORS[user?.role], border: `1px solid ${ROLE_COLORS[user?.role]}40`, fontSize: '0.7rem' }} />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+            <Avatar sx={{
+              width: 40, height: 40,
+              bgcolor: user?.avatar_color || ROLE_COLORS[user?.role] || '#6BCB77',
+              fontSize: 16, fontWeight: 700, color: '#13141a',
+            }}>
+              {(user?.username || 'U')[0].toUpperCase()}
+            </Avatar>
+            <Box>
+              <Typography variant="body2" fontWeight={700} lineHeight={1.2}>
+                {user?.full_name || user?.username}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {user?.title || user?.email}
+              </Typography>
+            </Box>
           </Box>
+          {user?.department && (
+            <Typography variant="caption" color="text.secondary" display="block">
+              {user.department}{user.location ? ` · ${user.location}` : ''}
+            </Typography>
+          )}
+          <Chip
+            label={user?.role}
+            size="small"
+            sx={{
+              mt: 0.5,
+              bgcolor: `${ROLE_COLORS[user?.role]}20`,
+              color: ROLE_COLORS[user?.role],
+              border: `1px solid ${ROLE_COLORS[user?.role]}40`,
+              fontSize: '0.7rem', fontWeight: 700,
+            }}
+          />
         </Box>
         <Divider sx={{ borderColor: '#2a2d3e' }} />
         <MenuItem onClick={() => { setAnchorEl(null); signOut(); navigate('/login') }}

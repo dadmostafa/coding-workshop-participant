@@ -60,7 +60,7 @@ function StatCard({ label, value, icon: Icon, color, bg, subtitle, onClick }) {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user, getGreeting } = useAuth()
   const navigate  = useNavigate()
   const [stats,   setStats]   = useState(null)
   const [loading, setLoading] = useState(true)
@@ -84,11 +84,20 @@ export default function DashboardPage() {
       {/* Header */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h5" fontWeight={700} color="text.primary">
-          Good morning, {user?.full_name?.split(' ')[0] || user?.username} 👋
+          {getGreeting()}
         </Typography>
-        <Typography variant="body2" color="text.secondary" mt={0.5}>
-          Here's what's happening across your organization
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            {user?.title && `${user.title} · `}
+            {user?.department && `${user.department} · `}
+            Here's what's happening across your organization
+          </Typography>
+        </Box>
+        {user?.last_login && (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+            Last signed in {new Date(user.last_login).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </Typography>
+        )}
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}

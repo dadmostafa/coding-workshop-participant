@@ -275,36 +275,56 @@ def seed_admin(db):
     if users.count_documents({}) == 0:
         users.insert_many([
             {
-                "username": "admin",
-                "password": hash_password("admin123"),
-                "role": "admin",
-                "full_name": "System Admin",
-                "email": "admin@acme.com",
-                "created_at": datetime.now(timezone.utc),
+                "username":     "admin",
+                "password":     hash_password("admin123"),
+                "role":         "admin",
+                "full_name":    "System Administrator",
+                "email":        "admin@acme.com",
+                "avatar_color": "#FF6B6B",
+                "title":        "Platform Admin",
+                "department":   "Technology",
+                "location":     "New York",
+                "created_at":   datetime.now(timezone.utc),
+                "last_login":   None,
             },
             {
-                "username": "manager1",
-                "password": hash_password("manager123"),
-                "role": "manager",
-                "full_name": "Team Manager",
-                "email": "manager@acme.com",
-                "created_at": datetime.now(timezone.utc),
+                "username":     "manager1",
+                "password":     hash_password("manager123"),
+                "role":         "manager",
+                "full_name":    "Sarah Chen",
+                "email":        "schen@acme.com",
+                "avatar_color": "#FFD166",
+                "title":        "Engineering Manager",
+                "department":   "Technology",
+                "location":     "New York",
+                "created_at":   datetime.now(timezone.utc),
+                "last_login":   None,
             },
             {
-                "username": "contrib1",
-                "password": hash_password("contrib123"),
-                "role": "contributor",
-                "full_name": "Team Contributor",
-                "email": "contrib@acme.com",
-                "created_at": datetime.now(timezone.utc),
+                "username":     "contrib1",
+                "password":     hash_password("contrib123"),
+                "role":         "contributor",
+                "full_name":    "Marcus Webb",
+                "email":        "mwebb@acme.com",
+                "avatar_color": "#6BCB77",
+                "title":        "Senior Engineer",
+                "department":   "Analytics",
+                "location":     "San Francisco",
+                "created_at":   datetime.now(timezone.utc),
+                "last_login":   None,
             },
             {
-                "username": "viewer1",
-                "password": hash_password("viewer123"),
-                "role": "viewer",
-                "full_name": "Read Only",
-                "email": "viewer@acme.com",
-                "created_at": datetime.now(timezone.utc),
+                "username":     "viewer1",
+                "password":     hash_password("viewer123"),
+                "role":         "viewer",
+                "full_name":    "Priya Sharma",
+                "email":        "psharma@acme.com",
+                "avatar_color": "#4ECDC4",
+                "title":        "Design Director",
+                "department":   "Product",
+                "location":     "London",
+                "created_at":   datetime.now(timezone.utc),
+                "last_login":   None,
             },
         ])
         return True
@@ -335,32 +355,117 @@ def handle_login(event, db):
             return err(401, f"Invalid credentials. {remaining} attempt(s) remaining before lockout.")
         return err(401, "Invalid credentials. Account is now locked.")
 
-    # Successful login — clear failed attempts
     clear_failed_attempts(username)
+
+    # Update last login timestamp
+    now = datetime.now(timezone.utc)
+    db["users"].update_one(
+        {"_id": user["_id"]},
+        {"$set": {"last_login": now}}
+    )
 
     user_id  = str(user["_id"])
     uname    = user["username"]
     role     = user["role"]
 
-    # Log successful login
-    log_audit(db, {"username": uname, "role": role, "sub": user_id}, 
-              "LOGIN", "auth", user_id, details=f"Login from {username}")
+    log_audit(db, {"username": uname, "role": role, "sub": user_id},
+              "LOGIN", "auth", user_id, details=f"{uname} signed in")
 
     return resp(200, {
         "access_token":  create_access_token(user_id, uname, role),
         "refresh_token": create_refresh_token(user_id, uname),
+        "token":         create_access_token(user_id, uname, role),
         "token_type":    "Bearer",
         "expires_in":    ACCESS_TOKEN_EXPIRY * 60,
-        "token":         create_access_token(user_id, uname, role),  # backwards compat
         "user": {
-            "id":       user_id,
-            "username": uname,
-            "role":     role,
-            "full_name": user.get("full_name", ""),
-            "email":    user.get("email", ""),
+            "id":           user_id,
+            "username":     uname,
+            "role":         role,
+            "full_name":    user.get("full_name", uname),
+            "email":        user.get("email", ""),
+            "avatar_color": user.get("avatar_color", "#6BCB77"),
+            "title":        user.get("title", ""),
+            "department":   user.get("department", ""),
+            "location":     user.get("location", ""),
+            "last_login":   user.get("last_login").isoformat() if user.get("last_login") else None,
         }
     })
 
+
+
+def handle_register(event, db):
+    body      = parse_body(event)
+    username  = (body.get("username") or "").strip().lower()
+    password  = body.get("password") or ""
+    email     = (body.get("email") or "").strip().lower()
+    full_name = (body.get("full_name") or "").strip()
+
+    errors = {}
+    if not username or len(username) < 3:
+        errors["username"] = "Username must be at least 3 characters"
+    if username and not re.match(r'^[a-z0-9_]+$', username):
+        errors["username"] = "Username can only contain letters, numbers, underscores"
+    if not password or len(password) < 8:
+        errors["password"] = "Password must be at least 8 characters"
+    elif not re.search(r'[A-Z]', password):
+        errors["password"] = "Password must contain at least one uppercase letter"
+    elif not re.search(r'[0-9]', password):
+        errors["password"] = "Password must contain at least one number"
+    if not email or "@" not in email:
+        errors["email"] = "Valid email is required"
+    if not full_name:
+        errors["full_name"] = "Full name is required"
+    if errors:
+        return resp(400, {"error": "Validation failed", "fields": errors})
+
+    if db["users"].find_one({"username": username}):
+        return resp(400, {"error": "Validation failed", "fields": {"username": "Username already taken"}})
+    if db["users"].find_one({"email": email}):
+        return resp(400, {"error": "Validation failed", "fields": {"email": "Email already registered"}})
+
+    colors = ["#FF6B6B", "#FFD166", "#6BCB77", "#4ECDC4", "#A29BFE", "#74B9FF", "#FF9F43", "#FD79A8"]
+    avatar_color = colors[hash(username) % len(colors)]
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "username":     username,
+        "password":     hash_password(password),
+        "role":         "viewer",
+        "full_name":    full_name,
+        "email":        email,
+        "avatar_color": avatar_color,
+        "title":        body.get("title", ""),
+        "department":   body.get("department", ""),
+        "location":     body.get("location", ""),
+        "created_at":   now,
+        "last_login":   None,
+    }
+
+    result  = db["users"].insert_one(doc)
+    user_id = str(result.inserted_id)
+
+    log_audit(db, {"username": username, "role": "viewer", "sub": user_id},
+              "CREATE", "users", user_id, details=f"New registration: {username}")
+
+    return resp(201, {
+        "access_token":  create_access_token(user_id, username, "viewer"),
+        "refresh_token": create_refresh_token(user_id, username),
+        "token":         create_access_token(user_id, username, "viewer"),
+        "token_type":    "Bearer",
+        "expires_in":    ACCESS_TOKEN_EXPIRY * 60,
+        "user": {
+            "id":           user_id,
+            "username":     username,
+            "role":         "viewer",
+            "full_name":    full_name,
+            "email":        email,
+            "avatar_color": avatar_color,
+            "title":        doc["title"],
+            "department":   doc["department"],
+            "location":     doc["location"],
+            "last_login":   None,
+        }
+    })
 
 
 def handle_seed(event, db):
@@ -1009,6 +1114,16 @@ def handler(event=None, context=None):
             action = sub_parts[0] if sub_parts else ""
             if action == "login" and method == "POST":
                 return handle_login(event, db)
+            if action == "register" and method == "POST":
+                return handle_register(event, db)
+            if action == "me" and method == "GET":
+                current_user = get_current_user(event)
+                if not current_user:
+                    return auth_error()
+                profile = db["users"].find_one({"_id": ObjectId(current_user["sub"])}, {"password": 0})
+                if not profile:
+                    return err(404, "User not found")
+                return resp(200, to_doc(profile))
             if action == "seed" and method == "POST":
                 return handle_seed(event, db)
             if action == "refresh" and method == "POST":

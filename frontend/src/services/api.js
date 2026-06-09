@@ -35,6 +35,12 @@ client.interceptors.response.use(
 export const login = (username, password) =>
   client.post('/auth/login', { username, password }).then(r => r.data)
 
+export const register = (data) =>
+  client.post('/auth/register', data).then(r => r.data)
+
+export const getMe = () =>
+  client.get('/auth/me').then(r => r.data)
+
 export const seedUsers = () =>
   client.post('/auth/seed').then(r => r.data)
 
