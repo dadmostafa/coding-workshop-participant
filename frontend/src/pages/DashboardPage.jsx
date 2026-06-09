@@ -1,31 +1,57 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
-  Grid, Card, CardContent, Typography, Box,
-  CircularProgress, Alert, Divider,
+  Grid, Box, Typography, CircularProgress, Alert,
+  Card, CardContent,
 } from '@mui/material'
 import {
   Groups, Person, EmojiEvents, LocationOff,
   WorkOff, TrendingUp, AccountTree,
 } from '@mui/icons-material'
 import { getStats } from '../services/api'
+import { useAuth } from '../context/AuthContext'
 
-function StatCard({ icon, label, value, color = 'primary.main', subtitle }) {
+const STAT_CARDS = [
+  { key: 'total_teams',        label: 'Total Teams',          icon: Groups,       color: '#6BCB77', bg: 'rgba(107,203,119,0.12)' },
+  { key: 'total_members',      label: 'Total Members',        icon: Person,       color: '#4ECDC4', bg: 'rgba(78,205,196,0.12)' },
+  { key: 'total_achievements', label: 'Achievements',         icon: EmojiEvents,  color: '#FFD166', bg: 'rgba(255,209,102,0.12)' },
+]
+
+const INSIGHT_CARDS = [
+  { key: 'leader_not_colocated', label: 'Leader not co-located',  icon: LocationOff, color: '#FF6B6B', bg: 'rgba(255,107,107,0.12)', subtitle: 'Leader ≠ team location' },
+  { key: 'leader_non_direct',    label: 'Non-direct leader',      icon: WorkOff,     color: '#FF9F43', bg: 'rgba(255,159,67,0.12)',  subtitle: 'Team leader is non-direct' },
+  { key: 'high_nondirect_ratio', label: 'High non-direct ratio',  icon: TrendingUp,  color: '#A29BFE', bg: 'rgba(162,155,254,0.12)', subtitle: '>20% non-direct staff' },
+  { key: 'has_org_leader',       label: 'Under org leader',       icon: AccountTree, color: '#74B9FF', bg: 'rgba(116,185,255,0.12)', subtitle: 'Reporting to org leader' },
+]
+
+function StatCard({ label, value, icon: Icon, color, bg, subtitle, onClick }) {
   return (
-    <Card elevation={2} sx={{ height: '100%' }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-          <Box sx={{
-            p: 1.5, borderRadius: 2, bgcolor: `${color}15`,
-            display: 'flex', alignItems: 'center',
-          }}>
-            <Box sx={{ color, '& svg': { fontSize: 28 } }}>{icon}</Box>
-          </Box>
+    <Card
+      onClick={onClick}
+      sx={{
+        bgcolor: '#1e2029', border: '1px solid #2a2d3e', height: '100%',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'all 0.2s',
+        '&:hover': onClick ? { border: `1px solid ${color}60`, transform: 'translateY(-2px)' } : {},
+      }}
+    >
+      <CardContent sx={{ p: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <Box>
-            <Typography variant="h4" fontWeight={700}>{value ?? '–'}</Typography>
-            <Typography variant="body2" color="text.secondary" fontWeight={500}>{label}</Typography>
+            <Typography variant="caption" sx={{ color: '#8b8fa8', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+              {label}
+            </Typography>
+            <Typography variant="h4" fontWeight={700} sx={{ color, mt: 0.5, lineHeight: 1 }}>
+              {value ?? '—'}
+            </Typography>
             {subtitle && (
-              <Typography variant="caption" color="text.disabled">{subtitle}</Typography>
+              <Typography variant="caption" sx={{ color: '#8b8fa8', mt: 0.5, display: 'block' }}>
+                {subtitle}
+              </Typography>
             )}
+          </Box>
+          <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: bg }}>
+            <Icon sx={{ fontSize: 24, color }} />
           </Box>
         </Box>
       </CardContent>
@@ -34,6 +60,8 @@ function StatCard({ icon, label, value, color = 'primary.main', subtitle }) {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth()
+  const navigate  = useNavigate()
   const [stats,   setStats]   = useState(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
@@ -46,69 +74,67 @@ export default function DashboardPage() {
   }, [])
 
   if (loading) return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-      <CircularProgress />
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+      <CircularProgress sx={{ color: '#6BCB77' }} />
     </Box>
   )
 
-  if (error) return <Alert severity="error">{error}</Alert>
-
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} mb={3}>Dashboard</Typography>
+      {/* Header */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h5" fontWeight={700} color="text.primary">
+          Good morning, {user?.full_name?.split(' ')[0] || user?.username} 👋
+        </Typography>
+        <Typography variant="body2" color="text.secondary" mt={0.5}>
+          Here's what's happening across your organization
+        </Typography>
+      </Box>
 
-      <Typography variant="subtitle2" color="text.secondary" mb={2}>Overview</Typography>
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+
+      {/* Main stats */}
       <Grid container spacing={2} mb={4}>
-        <Grid item xs={12} sm={6} md={4}>
-          <StatCard icon={<Groups />} label="Total Teams" value={stats.total_teams} color="#1565C0" />
-        </Grid>
-        <Grid item xs={12} sm={6} md={4}>
-          <StatCard icon={<Person />} label="Total Members" value={stats.total_members} color="#2E7D32" />
-        </Grid>
-        <Grid item xs={12} sm={6} md={4}>
-          <StatCard icon={<EmojiEvents />} label="Achievements" value={stats.total_achievements} color="#F57C00" />
-        </Grid>
+        {STAT_CARDS.map(card => (
+          <Grid item xs={12} sm={4} key={card.key}>
+            <StatCard
+              label={card.label}
+              value={stats?.[card.key]}
+              icon={card.icon}
+              color={card.color}
+              bg={card.bg}
+              onClick={() => {
+                if (card.key === 'total_teams') navigate('/teams')
+                if (card.key === 'total_members') navigate('/members')
+                if (card.key === 'total_achievements') navigate('/achievements')
+              }}
+            />
+          </Grid>
+        ))}
       </Grid>
 
-      <Divider sx={{ mb: 3 }} />
-      <Typography variant="subtitle2" color="text.secondary" mb={2}>Organizational Insights</Typography>
+      {/* Section header */}
+      <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Typography variant="body2" fontWeight={700} sx={{ color: '#8b8fa8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Organizational insights
+        </Typography>
+        <Box sx={{ flexGrow: 1, height: '1px', bgcolor: '#2a2d3e' }} />
+      </Box>
+
+      {/* Insight cards */}
       <Grid container spacing={2}>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            icon={<LocationOff />}
-            label="Leader not co-located"
-            value={stats.leader_not_colocated}
-            color="#C62828"
-            subtitle="Teams where leader ≠ team location"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            icon={<WorkOff />}
-            label="Leader is non-direct"
-            value={stats.leader_non_direct}
-            color="#AD1457"
-            subtitle="Teams with non-direct team leader"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            icon={<TrendingUp />}
-            label="High non-direct ratio"
-            value={stats.high_nondirect_ratio}
-            color="#6A1B9A"
-            subtitle="Teams with >20% non-direct staff"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            icon={<AccountTree />}
-            label="Under org leader"
-            value={stats.has_org_leader}
-            color="#00695C"
-            subtitle="Teams reporting to an org leader"
-          />
-        </Grid>
+        {INSIGHT_CARDS.map(card => (
+          <Grid item xs={12} sm={6} md={3} key={card.key}>
+            <StatCard
+              label={card.label}
+              value={stats?.[card.key]}
+              icon={card.icon}
+              color={card.color}
+              bg={card.bg}
+              subtitle={card.subtitle}
+            />
+          </Grid>
+        ))}
       </Grid>
     </Box>
   )

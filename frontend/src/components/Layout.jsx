@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
-  Box, Drawer, AppBar, Toolbar, Typography, List, ListItem,
-  ListItemButton, ListItemIcon, ListItemText, IconButton,
-  Avatar, Menu, MenuItem, Divider, Chip, useMediaQuery, useTheme,
+  Box, Tooltip, Avatar, Divider, Menu, MenuItem,
+  Typography, useMediaQuery, useTheme, Drawer, IconButton,
 } from '@mui/material'
 import {
-  Dashboard, Groups, Person, EmojiEvents, Settings,
-  Menu as MenuIcon, Logout, AdminPanelSettings,
+  Dashboard, Groups, Person, EmojiEvents,
+  AdminPanelSettings, Logout, Menu as MenuIcon,
 } from '@mui/icons-material'
 import { useAuth } from '../context/AuthContext'
 
-const DRAWER_WIDTH = 240
+const SIDEBAR_W = 68
+const MOBILE_DRAWER_W = 220
 
 const NAV = [
   { label: 'Dashboard',    path: '/',             icon: <Dashboard /> },
@@ -20,8 +20,30 @@ const NAV = [
   { label: 'Achievements', path: '/achievements', icon: <EmojiEvents /> },
 ]
 
-const ROLE_COLOR = {
-  admin: 'error', manager: 'warning', contributor: 'info', viewer: 'default'
+const ROLE_COLORS = {
+  admin: '#FF6B6B', manager: '#FFD166', contributor: '#6BCB77', viewer: '#4ECDC4'
+}
+
+function NavIcon({ item, active, onClick }) {
+  return (
+    <Tooltip title={item.label} placement="right">
+      <Box
+        onClick={onClick}
+        sx={{
+          width: 44, height: 44,
+          borderRadius: 2.5,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', mb: 0.5,
+          color: active ? '#fff' : '#8b8fa8',
+          bgcolor: active ? 'primary.main' : 'transparent',
+          transition: 'all 0.15s',
+          '&:hover': { bgcolor: active ? 'primary.main' : '#252736', color: '#fff' },
+        }}
+      >
+        {item.icon}
+      </Box>
+    </Tooltip>
+  )
 }
 
 export default function Layout() {
@@ -37,109 +59,114 @@ export default function Layout() {
     ? [...NAV, { label: 'Users', path: '/users', icon: <AdminPanelSettings /> }]
     : NAV
 
-  const drawer = (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Toolbar sx={{ bgcolor: 'primary.main' }}>
-        <Typography variant="h6" sx={{ color: 'white', fontWeight: 700 }}>
-          ACME Teams
-        </Typography>
-      </Toolbar>
-      <List sx={{ flexGrow: 1, pt: 1 }}>
+  const isActive = (path) =>
+    path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)
+
+  const sidebarContent = (
+    <Box sx={{
+      width: isMobile ? MOBILE_DRAWER_W : SIDEBAR_W,
+      height: '100vh',
+      bgcolor: '#16171f',
+      borderRight: '1px solid #2a2d3e',
+      display: 'flex', flexDirection: 'column',
+      alignItems: isMobile ? 'flex-start' : 'center',
+      py: 2, px: isMobile ? 2 : 1.5,
+    }}>
+      <Box sx={{
+        width: 36, height: 36, borderRadius: 2,
+        bgcolor: 'primary.main', display: 'flex',
+        alignItems: 'center', justifyContent: 'center',
+        mb: 3, flexShrink: 0,
+      }}>
+        <Groups sx={{ fontSize: 20, color: '#13141a' }} />
+      </Box>
+
+      <Box sx={{ flexGrow: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'center' }}>
         {navItems.map(item => (
-          <ListItem key={item.path} disablePadding>
-            <ListItemButton
-              selected={location.pathname === item.path ||
-                (item.path !== '/' && location.pathname.startsWith(item.path))}
+          isMobile ? (
+            <Box
+              key={item.path}
               onClick={() => { navigate(item.path); setMobileOpen(false) }}
               sx={{
-                mx: 1, borderRadius: 2, mb: 0.5,
-                '&.Mui-selected': { bgcolor: 'primary.light', color: 'primary.dark' },
+                display: 'flex', alignItems: 'center', gap: 1.5,
+                px: 1.5, py: 1.2, borderRadius: 2, mb: 0.5, width: '100%',
+                cursor: 'pointer',
+                color: isActive(item.path) ? '#fff' : '#8b8fa8',
+                bgcolor: isActive(item.path) ? 'primary.main' : 'transparent',
+                '&:hover': { bgcolor: isActive(item.path) ? 'primary.main' : '#252736', color: '#fff' },
               }}
             >
-              <ListItemIcon sx={{ minWidth: 38 }}>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} />
-            </ListItemButton>
-          </ListItem>
+              {item.icon}
+              <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
+            </Box>
+          ) : (
+            <NavIcon
+              key={item.path}
+              item={item}
+              active={isActive(item.path)}
+              onClick={() => navigate(item.path)}
+            />
+          )
         ))}
-      </List>
-      <Divider />
-      <Box sx={{ p: 2 }}>
-        <Typography variant="caption" color="text.secondary">
-          Logged in as
-        </Typography>
-        <Typography variant="body2" fontWeight={600}>{user?.full_name || user?.username}</Typography>
-        <Chip
-          size="small"
-          label={user?.role}
-          color={ROLE_COLOR[user?.role] || 'default'}
-          sx={{ mt: 0.5 }}
-        />
       </Box>
+
+      <Divider sx={{ borderColor: '#2a2d3e', width: '100%', mb: 2 }} />
+
+      <Tooltip title={`${user?.username} (${user?.role})`} placement="right">
+        <Avatar
+          onClick={e => setAnchorEl(e.currentTarget)}
+          sx={{
+            width: 36, height: 36, cursor: 'pointer',
+            bgcolor: ROLE_COLORS[user?.role] || '#6BCB77',
+            fontSize: 14, fontWeight: 700, color: '#13141a',
+          }}
+        >
+          {(user?.username || 'U')[0].toUpperCase()}
+        </Avatar>
+      </Tooltip>
+
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}
+        PaperProps={{ sx: { bgcolor: '#1e2029', border: '1px solid #2a2d3e', minWidth: 180 } }}
+      >
+        <Box sx={{ px: 2, py: 1 }}>
+          <Typography variant="body2" fontWeight={700}>{user?.full_name || user?.username}</Typography>
+          <Typography variant="caption" color="text.secondary">{user?.role}</Typography>
+        </Box>
+        <Divider sx={{ borderColor: '#2a2d3e' }} />
+        <MenuItem onClick={() => { setAnchorEl(null); signOut(); navigate('/login') }}
+          sx={{ gap: 1, color: '#FF6B6B', mt: 0.5 }}>
+          <Logout fontSize="small" /> Sign out
+        </MenuItem>
+      </Menu>
     </Box>
   )
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <AppBar position="fixed" sx={{ zIndex: theme.zIndex.drawer + 1 }}>
-        <Toolbar>
-          {isMobile && (
-            <IconButton color="inherit" edge="start" onClick={() => setMobileOpen(v => !v)} sx={{ mr: 2 }}>
-              <MenuIcon />
-            </IconButton>
-          )}
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            ACME Inc. – Team Management
-          </Typography>
-          <IconButton color="inherit" onClick={e => setAnchorEl(e.currentTarget)}>
-            <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main', fontSize: 14 }}>
-              {(user?.username || 'U')[0].toUpperCase()}
-            </Avatar>
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+      {isMobile && (
+        <Box sx={{
+          position: 'fixed', top: 0, left: 0, right: 0, height: 56,
+          bgcolor: '#16171f', borderBottom: '1px solid #2a2d3e',
+          display: 'flex', alignItems: 'center', px: 2, zIndex: 1200,
+        }}>
+          <IconButton onClick={() => setMobileOpen(true)} sx={{ color: '#8b8fa8' }}>
+            <MenuIcon />
           </IconButton>
-          <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
-            <MenuItem disabled>
-              <Typography variant="caption">{user?.email}</Typography>
-            </MenuItem>
-            <Divider />
-            <MenuItem onClick={() => { setAnchorEl(null); signOut(); navigate('/login') }}>
-              <Logout fontSize="small" sx={{ mr: 1 }} /> Logout
-            </MenuItem>
-          </Menu>
-        </Toolbar>
-      </AppBar>
-
-      {/* Desktop drawer */}
-      {!isMobile && (
-        <Drawer
-          variant="permanent"
-          sx={{
-            width: DRAWER_WIDTH,
-            '& .MuiDrawer-paper': { width: DRAWER_WIDTH, boxSizing: 'border-box' },
-          }}
-        >
-          {drawer}
-        </Drawer>
+          <Typography variant="h6" sx={{ ml: 1, fontSize: 16 }}>ACME Teams</Typography>
+        </Box>
       )}
 
-      {/* Mobile drawer */}
-      <Drawer
-        variant="temporary"
-        open={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-        sx={{
-          display: { xs: 'block', md: 'none' },
-          '& .MuiDrawer-paper': { width: DRAWER_WIDTH },
-        }}
-      >
-        {drawer}
+      {!isMobile && sidebarContent}
+
+      <Drawer open={mobileOpen} onClose={() => setMobileOpen(false)}
+        PaperProps={{ sx: { bgcolor: 'transparent', border: 'none' } }}>
+        {sidebarContent}
       </Drawer>
 
       <Box component="main" sx={{
-        flexGrow: 1,
-        p: 3,
-        mt: 8,
-        ml: isMobile ? 0 : `${DRAWER_WIDTH}px`,
-        bgcolor: 'background.default',
-        minHeight: '100vh',
+        flexGrow: 1, p: { xs: 2, md: 3 },
+        mt: isMobile ? 7 : 0,
+        overflow: 'auto', minHeight: '100vh',
       }}>
         <Outlet />
       </Box>

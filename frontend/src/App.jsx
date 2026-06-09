@@ -13,14 +13,29 @@ import Layout           from './components/Layout'
 
 const theme = createTheme({
   palette: {
-    primary:   { main: '#1565C0' },
-    secondary: { main: '#F57C00' },
-    background: { default: '#F4F6F9' },
+    mode: 'dark',
+    primary:    { main: '#6BCB77' },
+    secondary:  { main: '#FFD166' },
+    background: { default: '#13141a', paper: '#1e2029' },
+    text:       { primary: '#e8eaf0', secondary: '#8b8fa8' },
   },
   typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Inter", "Roboto", sans-serif',
+    h5: { fontWeight: 700 },
+    h6: { fontWeight: 600 },
   },
-  shape: { borderRadius: 10 },
+  shape: { borderRadius: 12 },
+  components: {
+    MuiPaper:  { styleOverrides: { root: { backgroundImage: 'none', backgroundColor: '#1e2029' } } },
+    MuiCard:   { styleOverrides: { root: { backgroundImage: 'none', backgroundColor: '#1e2029', border: '1px solid #2a2d3e' } } },
+    MuiTableContainer: { styleOverrides: { root: { backgroundColor: '#1e2029' } } },
+    MuiTableHead: { styleOverrides: { root: { '& .MuiTableCell-head': { backgroundColor: '#16171f', color: '#8b8fa8', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' } } } },
+    MuiTableRow:  { styleOverrides: { root: { '&:hover': { backgroundColor: '#252736' }, '& .MuiTableCell-root': { borderColor: '#2a2d3e' } } } },
+    MuiButton: { styleOverrides: { contained: { borderRadius: 8, textTransform: 'none', fontWeight: 600 }, outlined: { borderRadius: 8, textTransform: 'none' }, text: { textTransform: 'none' } } },
+    MuiChip: { styleOverrides: { root: { borderRadius: 6 } } },
+    MuiTextField: { styleOverrides: { root: { '& .MuiOutlinedInput-root': { backgroundColor: '#13141a', '& fieldset': { borderColor: '#2a2d3e' }, '&:hover fieldset': { borderColor: '#6BCB77' } } } } },
+    MuiDialog: { styleOverrides: { paper: { backgroundColor: '#1e2029', border: '1px solid #2a2d3e' } } },
+  }
 })
 
 function PrivateRoute({ children }) {
