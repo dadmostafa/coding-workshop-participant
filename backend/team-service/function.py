@@ -110,6 +110,29 @@ def qs(event: dict) -> dict:
     return event.get("queryStringParameters") or {}
 
 
+# ── Soft delete helpers ───────────────────────────────────────────────────────
+
+def soft_delete(col, oid: ObjectId, user: dict) -> bool:
+    """Mark a document as deleted instead of removing it."""
+    result = col.update_one(
+        {"_id": oid, "deleted": {"$ne": True}},
+        {"$set": {
+            "deleted":      True,
+            "deleted_at":   datetime.now(timezone.utc),
+            "deleted_by":   user.get("username", "unknown"),
+        }}
+    )
+    return result.modified_count > 0
+
+
+def active_filter(extra: dict = None) -> dict:
+    """Return a query filter that excludes soft-deleted documents."""
+    q = {"deleted": {"$ne": True}}
+    if extra:
+        q.update(extra)
+    return q
+
+
 # ── Audit Log ─────────────────────────────────────────────────────────────────
 
 def log_audit(db, user: dict, action: str, resource: str, resource_id: str = None, 
@@ -423,7 +446,7 @@ def handle_teams(event, method, path_parts, db, user):
             query["name"] = {"$regex": q["search"], "$options": "i"}
         if q.get("location"):
             query["location"] = {"$regex": q["location"], "$options": "i"}
-        docs = [to_doc(d) for d in col.find(query).sort("name", 1)]
+        docs = [to_doc(d) for d in col.find(active_filter(query)).sort("name", 1)]
         return resp(200, docs)
 
     if method == "POST":
@@ -481,11 +504,23 @@ def handle_teams(event, method, path_parts, db, user):
     if method == "DELETE":
         if not can_delete(user):
             return permission_error("manager")
-        result = col.delete_one({"_id": ObjectId(tid)})
-        if result.deleted_count == 0:
+        deleted = soft_delete(col, ObjectId(tid), user)
+        if not deleted:
             return err(404, "Team not found")
         log_audit(db, user, "DELETE", "teams", tid, details=f"Deleted team {tid}")
         return resp(204, {})
+
+    # Restore soft-deleted team — admin only
+    if method == "POST" and sub_parts and sub_parts[0] == "restore":
+        if not can_admin(user):
+            return permission_error("admin")
+        result = col.update_one(
+            {"_id": ObjectId(tid)},
+            {"$unset": {"deleted": "", "deleted_at": "", "deleted_by": ""}}
+        )
+        if result.modified_count == 0:
+            return err(404, "Team not found")
+        return resp(200, {"message": "Team restored"})
 
     return err(405, "Method not allowed")
 
@@ -509,7 +544,7 @@ def handle_members(event, method, path_parts, db, user):
                 {"email": {"$regex": q["search"], "$options": "i"}},
                 {"role": {"$regex": q["search"], "$options": "i"}},
             ]
-        docs = [to_doc(d) for d in col.find(query).sort("name", 1)]
+        docs = [to_doc(d) for d in col.find(active_filter(query)).sort("name", 1)]
         return resp(200, docs)
 
     if method == "POST":
@@ -568,8 +603,8 @@ def handle_members(event, method, path_parts, db, user):
     if method == "DELETE":
         if not can_delete(user):
             return permission_error("manager")
-        result = col.delete_one({"_id": ObjectId(mid)})
-        if result.deleted_count == 0:
+        deleted = soft_delete(col, ObjectId(mid), user)
+        if not deleted:
             return err(404, "Member not found")
         log_audit(db, user, "DELETE", "members", mid)
         return resp(204, {})
@@ -594,7 +629,7 @@ def handle_achievements(event, method, path_parts, db, user):
             query["month"] = int(q["month"])
         if q.get("year"):
             query["year"] = int(q["year"])
-        docs = [to_doc(d) for d in col.find(query).sort("year", -1)]
+        docs = [to_doc(d) for d in col.find(active_filter(query)).sort("year", -1)]
         return resp(200, docs)
 
     if method == "POST":
@@ -657,8 +692,8 @@ def handle_achievements(event, method, path_parts, db, user):
     if method == "DELETE":
         if not can_delete(user):
             return permission_error("manager")
-        result = col.delete_one({"_id": ObjectId(aid)})
-        if result.deleted_count == 0:
+        deleted = soft_delete(col, ObjectId(aid), user)
+        if not deleted:
             return err(404, "Achievement not found")
         log_audit(db, user, "DELETE", "achievements", aid)
         return resp(204, {})
@@ -679,7 +714,7 @@ def handle_metadata(event, method, path_parts, db, user):
         query = {}
         if q.get("team_id") and valid_oid(q["team_id"]):
             query["team_id"] = q["team_id"]
-        docs = [to_doc(d) for d in col.find(query)]
+        docs = [to_doc(d) for d in col.find(active_filter(query))]
         return resp(200, docs)
 
     if method == "POST":
@@ -745,6 +780,136 @@ def handle_roles():
     return resp(200, {
         "roles": [get_role_info(r) for r in roles],
         "description": "Roles in ascending order of privilege"
+    })
+
+
+# ── Team Notes handler ────────────────────────────────────────────────────────
+
+def handle_notes(event, method, path_parts, db, user):
+    """
+    GET  /teams/{id}/notes         - get all notes for a team
+    POST /teams/{id}/notes         - add a note
+    DELETE /teams/{id}/notes/{nid} - delete a note (manager+)
+    """
+    if not can_read(user):
+        return auth_error()
+
+    team_id = path_parts[0] if path_parts else None
+    if not team_id or not valid_oid(team_id):
+        return err(400, "Invalid team id")
+
+    col = db["team_notes"]
+
+    if method == "GET":
+        docs = list(col.find(
+            active_filter({"team_id": team_id})
+        ).sort([("created_at", -1)]))
+        return resp(200, [to_doc(d) for d in docs])
+
+    if method == "POST":
+        if not can_write(user):
+            return permission_error("contributor")
+        body = parse_body(event)
+        content = (body.get("content") or "").strip()
+        if not content:
+            return err(400, "Note content is required")
+        if len(content) > 2000:
+            return err(400, "Note must be under 2000 characters")
+
+        # Verify team exists
+        team = db["teams"].find_one({"_id": ObjectId(team_id), "deleted": {"$ne": True}})
+        if not team:
+            return err(404, "Team not found")
+
+        doc = {
+            "team_id":    team_id,
+            "content":    content,
+            "author":     user.get("username", "unknown"),
+            "author_id":  user.get("sub", ""),
+            "pinned":     bool(body.get("pinned", False)),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        result = col.insert_one(doc)
+        doc["id"] = str(result.inserted_id)
+        doc.pop("_id", None)
+        log_audit(db, user, "CREATE", "notes", str(result.inserted_id),
+                  details=f"Note on team {team.get('name', '')}")
+        return resp(201, doc)
+
+    # DELETE /teams/{id}/notes/{nid}
+    if method == "DELETE":
+        if not can_delete(user):
+            return permission_error("manager")
+        nid = path_parts[1] if len(path_parts) > 1 else None
+        if not nid or not valid_oid(nid):
+            return err(400, "Invalid note id")
+        deleted = soft_delete(col, ObjectId(nid), user)
+        if not deleted:
+            return err(404, "Note not found")
+        return resp(204, {})
+
+    return err(405, "Method not allowed")
+
+
+# ── Global Search handler ─────────────────────────────────────────────────────
+
+def handle_search(event, db, user):
+    """
+    GET /search?q=term
+    Searches teams, members, achievements simultaneously.
+    Returns grouped results with match counts.
+    """
+    if not can_read(user):
+        return auth_error()
+
+    q_param = (qs(event).get("q") or "").strip()
+    if not q_param or len(q_param) < 2:
+        return err(400, "Search query must be at least 2 characters")
+
+    if len(q_param) > 100:
+        return err(400, "Search query too long")
+
+    regex = {"$regex": q_param, "$options": "i"}
+
+    # Search teams
+    teams = [to_doc(d) for d in db["teams"].find(active_filter({"$or": [
+        {"name": regex},
+        {"description": regex},
+        {"department": regex},
+        {"location": regex},
+        {"team_leader": regex},
+        {"org_leader": regex},
+    ]})).limit(10)]
+
+    # Search members
+    members = [to_doc(d) for d in db["members"].find(active_filter({"$or": [
+        {"name": regex},
+        {"email": regex},
+        {"role": regex},
+        {"location": regex},
+    ]})).limit(10)]
+
+    # Search achievements
+    achievements = [to_doc(d) for d in db["achievements"].find(active_filter({"$or": [
+        {"title": regex},
+        {"description": regex},
+        {"impact": regex},
+    ]})).limit(10)]
+
+    total = len(teams) + len(members) + len(achievements)
+
+    return resp(200, {
+        "query":        q_param,
+        "total":        total,
+        "teams":        teams,
+        "members":      members,
+        "achievements": achievements,
+        "counts": {
+            "teams":        len(teams),
+            "members":      len(members),
+            "achievements": len(achievements),
+        }
     })
 
 # ── Stats / dashboard aggregations ───────────────────────────────────────────
@@ -870,6 +1035,15 @@ def handler(event=None, context=None):
             "achievements": handle_achievements,
             "metadata":     handle_metadata,
         }
+
+        # Add notes routing — handle /teams/{id}/notes[/{nid}]
+        if resource == "teams" and len(parts) >= 3 and parts[2] == "notes":
+            team_id = parts[1]
+            note_parts = [team_id] + (parts[3:] if len(parts) > 3 else [])
+            return handle_notes(event, method, note_parts, db, user)
+
+        if resource == "search":
+            return handle_search(event, db, user)
 
         if resource == "stats":
             return handle_stats(db, user)

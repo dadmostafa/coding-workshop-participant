@@ -9,6 +9,7 @@ import { ArrowBack, Delete, Add, EmojiEvents, Person } from '@mui/icons-material
 import { getTeam, getMembers, getAchievements, deleteMember, deleteAchievement } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
+import TeamNotes from '../components/TeamNotes'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const AVATAR_COLORS = ['#FF6B6B','#FFD166','#6BCB77','#4ECDC4','#A29BFE','#74B9FF','#FF9F43','#FD79A8']
@@ -176,6 +177,9 @@ export default function TeamDetailPage() {
 
       <ConfirmDialog open={!!delMember} title="Remove Member" message={`Remove "${delMember?.name}"?`} onConfirm={async () => { await deleteMember(delMember.id); setDelMember(null); load() }} onCancel={() => setDelMember(null)} />
       <ConfirmDialog open={!!delAch} title="Delete Achievement" message={`Delete "${delAch?.title}"?`} onConfirm={async () => { await deleteAchievement(delAch.id); setDelAch(null); load() }} onCancel={() => setDelAch(null)} />
+
+      <Divider sx={{ borderColor: '#2a2d3e', my: 3 }} />
+      <TeamNotes teamId={id} />
     </Box>
   )
 }

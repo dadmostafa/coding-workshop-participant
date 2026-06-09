@@ -31,11 +31,18 @@ const RESOURCE_ICONS = {
 
 function timeAgo(isoString) {
   if (!isoString) return ''
-  const diff = Math.floor((Date.now() - new Date(isoString)) / 1000)
+  
+  // Ensure UTC parsing — append Z if not already present
+  const ts   = isoString.endsWith('Z') ? isoString : isoString + 'Z'
+  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000)
+  
+  // Handle clock skew or future timestamps
+  if (diff < 0)    return 'just now'
   if (diff < 60)   return `${diff}s ago`
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400)return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
+  return new Date(ts).toLocaleDateString()
 }
 
 export default function ActivityPage() {
