@@ -211,9 +211,18 @@ export default function ProjectDetailPage() {
   // ── Budget update ─────────────────────────────────────────────────────────
 
   const handleBudgetSave = async () => {
-    await updateProject(id, { total_budget: parseFloat(newBudget) || 0 })
-    setBudgetEdit(false)
-    load()
+    try {
+      await updateProject(id, {
+        total_budget: parseFloat(newBudget) || 0,
+      })
+      setBudgetEdit(false)
+      setProject(p => ({
+        ...p,
+        total_budget: parseFloat(newBudget) || 0,
+      }))
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save budget')
+    }
   }
 
   // ── Member actions ────────────────────────────────────────────────────────

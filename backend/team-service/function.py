@@ -1253,7 +1253,7 @@ def handle_projects(event, method, path_parts, db, user):
         for field in [
             "name", "description", "status", "priority",
             "owner_id", "owner_name", "tags", "start_date",
-            "due_date", "links",
+            "due_date", "links", "total_budget", "currency",
         ]:
             if field in body:
                 update[field] = body[field]
