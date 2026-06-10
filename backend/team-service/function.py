@@ -649,69 +649,52 @@ def handle_teams(event, method, path_parts, db, user):
             return permission_error("manager")
         deleted = soft_delete(col, ObjectId(tid), user)
         if not deleted:
-            filt = {"deleted": {"$ne": True}}
+            return err(404, "Team not found")
+        log_audit(db, user, "DELETE", "teams", tid)
+        return resp(204, {})
 
-            # Simple counts — no full collection load
-            total_teams        = db["teams"].count_documents(filt)
-            total_members      = db["members"].count_documents(filt)
-            total_achievements = db["achievements"].count_documents(filt)
+    return err(405, "Method not allowed")
 
-            # Leader not co-located — pure MongoDB comparison
-            leader_not_colocated = db["teams"].count_documents({
-                **filt,
-                "team_leader":     {"$exists": True, "$ne": ""},
-                "location":        {"$exists": True, "$ne": ""},
-                "leader_location": {"$exists": True, "$ne": ""},
-                "$expr": {"$ne": [
-                    {"$toLower": "$location"},
-                    {"$toLower": "$leader_location"},
-                ]}
-            })
 
-            # Teams where the leader is a non-direct member
-            leader_non_direct = db["members"].count_documents({
-                **filt,
-                "is_team_leader":  True,
-                "employment_type": "non-direct",
-            })
+# ── Members CRUD ──────────────────────────────────────────────────────────────
 
-            # Teams with non-direct ratio > 20% — aggregation pipeline
-            pipeline = [
-                {"$match": filt},
-                {"$group": {
-                    "_id":        "$team_id",
-                    "total":      {"$sum": 1},
-                    "non_direct": {"$sum": {
-                        "$cond": [{"$eq": ["$employment_type", "non-direct"]}, 1, 0]
-                    }}
-                }},
-                {"$match": {
-                    "$expr": {
-                        "$gt": [
-                            {"$divide": ["$non_direct", "$total"]},
-                            0.2
-                        ]
-                    }
-                }},
-                {"$count": "count"}
+def handle_members(event, method, path_parts, db, user):
+    if not can_read(user):
+        return auth_error()
+
+    col = db["members"]
+
+    if method == "GET" and not path_parts:
+        q     = qs(event)
+        query = {}
+        if q.get("team_id") and valid_oid(q["team_id"]):
+            query["team_id"] = q["team_id"]
+        if q.get("search"):
+            safe = escape_regex(q["search"])
+            query["$or"] = [
+                {"name":  {"$regex": safe, "$options": "i"}},
+                {"email": {"$regex": safe, "$options": "i"}},
+                {"role":  {"$regex": safe, "$options": "i"}},
             ]
-            high_nondirect_result = list(db["members"].aggregate(pipeline))
-            high_nondirect_ratio  = high_nondirect_result[0]["count"] if high_nondirect_result else 0
+        docs = [to_doc(d) for d in col.find(active_filter(query)).sort([("name", 1)])]
+        return resp(200, docs)
 
-            # Teams reporting to an org leader
-            has_org_leader = db["teams"].count_documents({
-                **filt,
-                "org_leader": {"$exists": True, "$ne": ""}
-            })
+    if method == "POST":
+        if not can_write(user):
+            return permission_error("contributor")
+        body = parse_body(event)
+        for f in ["team_id", "name"]:
+            if not body.get(f):
+                return err(400, f"{f} is required")
         if not valid_oid(body["team_id"]):
             return err(400, "Invalid team_id")
-                "total_teams":          total_teams,
-                "total_members":        total_members,
-                "total_achievements":   total_achievements,
+        # Verify team exists and is not deleted
+        if not db["teams"].find_one({"_id": ObjectId(body["team_id"]), "deleted": {"$ne": True}}):
+            return err(404, "Team not found")
         doc = {
-                "leader_non_direct":    leader_non_direct,
             "team_id":         body["team_id"],
-                "has_org_leader":       has_org_leader,
+            "name":            body["name"].strip(),
+            "email":           (body.get("email") or "").strip().lower(),
             "role":            body.get("role", ""),
             "location":        body.get("location", ""),
             "employment_type": body.get("employment_type", "direct"),
