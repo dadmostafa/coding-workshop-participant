@@ -144,3 +144,8 @@ export const deleteProjectDeliverable = (id, itemId)       => client.delete(`/pr
 
 export const getPipeline = () =>
   client.get('/pipeline').then(r => r.data)
+
+// ── Resources ────────────────────────────────────────────────────────────────
+
+export const getResourceAllocation = () =>
+  client.get('/resources/allocation').then(r => r.data)

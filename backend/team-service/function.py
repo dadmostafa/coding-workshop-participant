@@ -140,19 +140,30 @@ def log_audit(db, user: dict, action: str, resource: str, resource_id: str = Non
 
 def _calc_progress(deliverables: list) -> int:
     """
-    Auto-calculate project progress from deliverable completion.
-    done = 100%, in_progress = 50%, pending = 0%
-    Returns 0 if no deliverables.
+    Auto-calculate progress from deliverable completion.
+    Blocked items (dependency not done) count as 0 even if in_progress.
     """
     if not deliverables:
         return 0
+
+    # Build done set for dependency checking
+    done_ids = {d["id"] for d in deliverables if d.get("status") == "done"}
+
     total = len(deliverables)
-    score = sum(
-        100 if d.get("status") == "done" else
-        50  if d.get("status") == "in_progress" else
-        0
-        for d in deliverables
-    )
+    score = 0
+    for d in deliverables:
+        status = d.get("status", "pending")
+        deps   = d.get("depends_on", [])
+
+        # Check if blocked by unfinished dependency
+        is_blocked = any(dep_id not in done_ids for dep_id in deps)
+
+        if status == "done":
+            score += 100
+        elif status == "in_progress" and not is_blocked:
+            score += 50
+        # blocked or pending = 0
+
     return round(score / total)
 
 
@@ -1222,6 +1233,13 @@ def handle_projects(event, method, path_parts, db, user):
         doc = col.find_one({"_id": ObjectId(pid), "deleted": {"$ne": True}})
         if not doc:
             return err(404, "Project not found")
+
+        # Add blocked flag to each deliverable
+        done_ids = {d["id"] for d in doc.get("deliverables", []) if d.get("status") == "done"}
+        for d in doc.get("deliverables", []):
+            deps = d.get("depends_on", [])
+            d["is_blocked"] = any(dep_id not in done_ids for dep_id in deps) and d.get("status") != "done"
+
         return resp(200, to_doc(doc))
 
     # ── Update project ────────────────────────────────────────────────────────
@@ -1378,13 +1396,14 @@ def handle_projects(event, method, path_parts, db, user):
 
         import uuid
         new_item = {
-            "id":         str(uuid.uuid4())[:8],
-            "title":      title,
-            "status":     "pending",   # pending / in_progress / done
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "created_by": user.get("username", ""),
-            "done_at":    None,
-            "done_by":    None,
+            "id":           str(uuid.uuid4())[:8],
+            "title":        title,
+            "status":       "pending",
+            "depends_on":   body.get("depends_on", []),  # list of item ids this depends on
+            "created_at":   datetime.now(timezone.utc).isoformat(),
+            "created_by":   user.get("username", ""),
+            "done_at":      None,
+            "done_by":      None,
         }
 
         updated_deliverables = project.get("deliverables", []) + [new_item]
