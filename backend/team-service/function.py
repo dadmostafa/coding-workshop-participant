@@ -20,6 +20,7 @@ from auth import (
     permission_error, auth_error, locked_error, get_role_info,
     is_account_locked, record_failed_attempt, clear_failed_attempts,
     MAX_FAILED_ATTEMPTS, SENSITIVE_FIELDS, get_cors_origin,
+    ACCESS_TOKEN_EXPIRY,
 )
 
 logger = logging.getLogger()
