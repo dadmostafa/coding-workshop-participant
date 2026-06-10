@@ -92,6 +92,14 @@ def ensure_indexes(db):
         db["team_notes"].create_index([("team_id",   ASCENDING)],  background=True)
         db["team_notes"].create_index([("created_at",DESCENDING)], background=True)
 
+        # Projects
+        db["projects"].create_index([("team_id", ASCENDING)], background=True)
+        db["projects"].create_index([("status", ASCENDING)], background=True)
+        db["projects"].create_index([("owner_id", ASCENDING)], background=True)
+        db["projects"].create_index([("updated_at", DESCENDING)], background=True)
+        db["projects"].create_index([("deleted", ASCENDING)], background=True)
+        db["projects"].create_index([("due_date", ASCENDING)], background=True)
+
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning("Index creation warning: %s", e)

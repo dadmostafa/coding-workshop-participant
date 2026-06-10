@@ -10,6 +10,8 @@ import AchievementsPage from './pages/AchievementsPage'
 import UsersPage        from './pages/UsersPage'
 import ActivityPage     from './pages/ActivityPage'
 import AuditPage        from './pages/AuditPage'
+import ProjectsPage     from './pages/ProjectsPage'
+import ProjectDetailPage from './pages/ProjectDetailPage'
 import Layout           from './components/Layout'
 
 const theme = createTheme({
@@ -171,6 +173,8 @@ export default function App() {
           <Route path="teams/:id"     element={<TeamDetailPage />} />
           <Route path="members"       element={<MembersPage />} />
           <Route path="achievements"  element={<AchievementsPage />} />
+          <Route path="projects"      element={<ProjectsPage />} />
+          <Route path="projects/:id"  element={<ProjectDetailPage />} />
           <Route path="activity"      element={<ActivityPage />} />
           <Route path="users"         element={<AdminRoute><UsersPage /></AdminRoute>} />
           <Route path="audit"         element={<AdminRoute><AuditPage /></AdminRoute>} />

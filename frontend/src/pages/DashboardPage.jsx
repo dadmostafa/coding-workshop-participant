@@ -6,7 +6,7 @@ import {
 } from '@mui/material'
 import {
   Groups, Person, EmojiEvents, LocationOff,
-  WorkOff, TrendingUp, AccountTree,
+  WorkOff, TrendingUp, AccountTree, FolderOpen,
 } from '@mui/icons-material'
 import { getStats } from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -16,6 +16,8 @@ const STAT_CARDS = [
   { key: 'total_teams',        label: 'Total Teams',          icon: Groups,       color: '#6BCB77', bg: 'rgba(107,203,119,0.12)' },
   { key: 'total_members',      label: 'Total Members',        icon: Person,       color: '#4ECDC4', bg: 'rgba(78,205,196,0.12)' },
   { key: 'total_achievements', label: 'Achievements',         icon: EmojiEvents,  color: '#FFD166', bg: 'rgba(255,209,102,0.12)' },
+  { key: 'total_projects',     label: 'Total Projects',       icon: FolderOpen,  color: '#A29BFE', bg: 'rgba(162,155,254,0.12)' },
+  { key: 'active_projects',    label: 'Active Projects',      icon: FolderOpen,  color: '#74B9FF', bg: 'rgba(116,185,255,0.12)' },
 ]
 
 const INSIGHT_CARDS = [
@@ -106,7 +108,7 @@ export default function DashboardPage() {
       {/* Main stats */}
       <Grid container spacing={2} mb={4}>
         {STAT_CARDS.map(card => (
-          <Grid item xs={12} sm={4} key={card.key}>
+          <Grid item xs={12} sm={6} md={4} key={card.key}>
             <StatCard
               label={card.label}
               value={stats?.[card.key]}
@@ -116,6 +118,8 @@ export default function DashboardPage() {
               onClick={() => {
                 if (card.key === 'total_teams') navigate('/teams')
                 if (card.key === 'total_members') navigate('/members')
+                if (card.key === 'total_projects') navigate('/projects')
+                if (card.key === 'active_projects') navigate('/projects')
                 if (card.key === 'total_achievements') navigate('/achievements')
               }}
             />

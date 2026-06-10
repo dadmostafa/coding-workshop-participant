@@ -1064,6 +1064,302 @@ def handle_notes(event, method, path_parts, db, user):
     return err(405, "Method not allowed")
 
 
+# ── Projects & Pipeline handler ───────────────────────────────────────────────
+
+def handle_projects(event, method, path_parts, db, user):
+    """
+    GET    /projects              - list all projects (viewer+) ?team_id= ?status= ?search=
+    POST   /projects              - create project (contributor+)
+    GET    /projects/{id}         - get single project (viewer+)
+    PUT    /projects/{id}         - update project (contributor+)
+    DELETE /projects/{id}         - soft delete (manager+)
+    POST   /projects/{id}/members - add member to project
+    DELETE /projects/{id}/members/{mid} - remove member from project
+    """
+    if not can_read(user):
+        return auth_error()
+
+    col = db["projects"]
+
+    # ── List projects ─────────────────────────────────────────────────────────
+    if method == "GET" and not path_parts:
+        q = qs(event)
+        query = {}
+
+        if q.get("team_id") and valid_oid(q["team_id"]):
+            query["team_id"] = q["team_id"]
+        if q.get("status"):
+            query["status"] = q["status"]
+        if q.get("owner_id"):
+            query["owner_id"] = q["owner_id"]
+        if q.get("search"):
+            safe = escape_regex(q["search"])
+            query["$or"] = [
+                {"name": {"$regex": safe, "$options": "i"}},
+                {"description": {"$regex": safe, "$options": "i"}},
+                {"tags": {"$regex": safe, "$options": "i"}},
+            ]
+
+        docs = [to_doc(d) for d in col.find(active_filter(query)).sort([("updated_at", -1)])]
+        return resp(200, docs)
+
+    # ── Create project ────────────────────────────────────────────────────────
+    if method == "POST" and not path_parts:
+        if not can_write(user):
+            return permission_error("contributor")
+
+        body = parse_body(event)
+
+        # Validation
+        errors = {}
+        if not (body.get("name") or "").strip():
+            errors["name"] = "Project name is required"
+        if not (body.get("team_id") or ""):
+            errors["team_id"] = "team_id is required"
+        if body.get("team_id") and not valid_oid(body["team_id"]):
+            errors["team_id"] = "Invalid team_id"
+        if errors:
+            return resp(400, {"error": "Validation failed", "fields": errors})
+
+        # Verify team exists
+        if not db["teams"].find_one({"_id": ObjectId(body["team_id"]), "deleted": {"$ne": True}}):
+            return err(404, "Team not found")
+
+        # Validate status
+        valid_statuses = ["backlog", "planning", "in_progress", "review", "completed", "on_hold", "cancelled"]
+        status = body.get("status", "backlog")
+        if status not in valid_statuses:
+            return err(400, f"status must be one of: {', '.join(valid_statuses)}")
+
+        # Validate priority
+        valid_priorities = ["low", "medium", "high", "critical"]
+        priority = body.get("priority", "medium")
+        if priority not in valid_priorities:
+            return err(400, f"priority must be one of: {', '.join(valid_priorities)}")
+
+        now = datetime.now(timezone.utc)
+        doc = {
+            "name": body["name"].strip(),
+            "description": body.get("description", ""),
+            "team_id": body["team_id"],
+            "status": status,
+            "priority": priority,
+            "owner_id": body.get("owner_id", ""),
+            "owner_name": body.get("owner_name", ""),
+            "members": body.get("members", []),
+            "tags": body.get("tags", []),
+            "start_date": body.get("start_date", ""),
+            "due_date": body.get("due_date", ""),
+            "progress": int(body.get("progress", 0)),
+            "links": body.get("links", []),
+            "created_by": user.get("username", ""),
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        result = col.insert_one(doc)
+        doc["id"] = str(result.inserted_id)
+        doc.pop("_id", None)
+        log_audit(db, user, "CREATE", "projects", doc["id"], details=doc["name"])
+        return resp(201, doc)
+
+    pid = path_parts[0] if path_parts else None
+    if not pid or not valid_oid(pid):
+        return err(400, "Invalid project id")
+
+    # ── Get single project ────────────────────────────────────────────────────
+    if method == "GET" and len(path_parts) == 1:
+        doc = col.find_one({"_id": ObjectId(pid), "deleted": {"$ne": True}})
+        if not doc:
+            return err(404, "Project not found")
+        return resp(200, to_doc(doc))
+
+    # ── Update project ────────────────────────────────────────────────────────
+    if method == "PUT" and len(path_parts) == 1:
+        if not can_write(user):
+            return permission_error("contributor")
+
+        body = parse_body(event)
+        update = {}
+
+        for field in [
+            "name", "description", "status", "priority",
+            "owner_id", "owner_name", "tags", "start_date",
+            "due_date", "links",
+        ]:
+            if field in body:
+                update[field] = body[field]
+
+        if "progress" in body:
+            try:
+                progress = int(body["progress"])
+                assert 0 <= progress <= 100
+                update["progress"] = progress
+            except (ValueError, AssertionError):
+                return err(400, "progress must be 0-100")
+
+        if "status" in update:
+            valid_statuses = ["backlog", "planning", "in_progress", "review", "completed", "on_hold", "cancelled"]
+            if update["status"] not in valid_statuses:
+                return err(400, "Invalid status")
+            if update["status"] == "completed":
+                update["completed_at"] = datetime.now(timezone.utc)
+
+        if not update:
+            return err(400, "No fields to update")
+
+        update["updated_at"] = datetime.now(timezone.utc)
+        result = col.update_one(
+            {"_id": ObjectId(pid), "deleted": {"$ne": True}},
+            {"$set": update},
+        )
+        if result.matched_count == 0:
+            return err(404, "Project not found")
+
+        doc = col.find_one({"_id": ObjectId(pid)})
+        log_audit(db, user, "UPDATE", "projects", pid, changes=update)
+        return resp(200, to_doc(doc))
+
+    # ── Delete project ────────────────────────────────────────────────────────
+    if method == "DELETE" and len(path_parts) == 1:
+        if not can_delete(user):
+            return permission_error("manager")
+        deleted = soft_delete(col, ObjectId(pid), user)
+        if not deleted:
+            return err(404, "Project not found")
+        log_audit(db, user, "DELETE", "projects", pid)
+        return resp(204, {})
+
+    # ── Add member to project ─────────────────────────────────────────────────
+    if method == "POST" and len(path_parts) >= 2 and path_parts[1] == "members":
+        if not can_write(user):
+            return permission_error("contributor")
+
+        body = parse_body(event)
+        member_id = body.get("member_id", "")
+        if not member_id or not valid_oid(member_id):
+            return err(400, "Valid member_id is required")
+
+        member = db["members"].find_one({"_id": ObjectId(member_id), "deleted": {"$ne": True}})
+        if not member:
+            return err(404, "Member not found")
+
+        project = col.find_one({"_id": ObjectId(pid), "deleted": {"$ne": True}})
+        if not project:
+            return err(404, "Project not found")
+
+        existing_ids = [m.get("member_id") for m in project.get("members", [])]
+        if member_id in existing_ids:
+            return err(400, "Member already on this project")
+
+        new_member = {
+            "member_id": member_id,
+            "member_name": member.get("name", ""),
+            "role": body.get("role", "member"),
+            "added_at": datetime.now(timezone.utc).isoformat(),
+            "added_by": user.get("username", ""),
+        }
+
+        col.update_one(
+            {"_id": ObjectId(pid), "deleted": {"$ne": True}},
+            {
+                "$push": {"members": new_member},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+        )
+        log_audit(
+            db,
+            user,
+            "UPDATE",
+            "projects",
+            pid,
+            details=f"Added {member.get('name')} to project",
+        )
+        return resp(200, {"message": f"{member.get('name')} added to project", "member": new_member})
+
+    # ── Remove member from project ────────────────────────────────────────────
+    if method == "DELETE" and len(path_parts) >= 3 and path_parts[1] == "members":
+        if not can_write(user):
+            return permission_error("contributor")
+
+        member_id = path_parts[2]
+        result = col.update_one(
+            {"_id": ObjectId(pid), "deleted": {"$ne": True}},
+            {
+                "$pull": {"members": {"member_id": member_id}},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+        )
+        if result.matched_count == 0:
+            return err(404, "Project not found")
+        log_audit(
+            db,
+            user,
+            "UPDATE",
+            "projects",
+            pid,
+            details=f"Removed member {member_id} from project",
+        )
+        return resp(200, {"message": "Member removed from project"})
+
+    return err(405, "Method not allowed")
+
+
+# ── Pipeline stats ────────────────────────────────────────────────────────────
+
+def handle_pipeline(db, user):
+    """
+    GET /pipeline
+    Returns project counts grouped by status - the kanban overview.
+    """
+    if not can_read(user):
+        return auth_error()
+
+    filt = {"deleted": {"$ne": True}}
+
+    pipeline = [
+        {"$match": filt},
+        {"$group": {
+            "_id": "$status",
+            "count": {"$sum": 1},
+            "projects": {"$push": {
+                "id": {"$toString": "$_id"},
+                "name": "$name",
+                "priority": "$priority",
+                "progress": "$progress",
+                "owner_name": "$owner_name",
+                "due_date": "$due_date",
+                "team_id": "$team_id",
+            }},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+
+    results = list(db["projects"].aggregate(pipeline))
+    total = db["projects"].count_documents(filt)
+    overdue = db["projects"].count_documents({
+        **filt,
+        "due_date": {"$lt": datetime.now(timezone.utc).isoformat()},
+        "status": {"$nin": ["completed", "cancelled"]},
+    })
+
+    status_order = ["backlog", "planning", "in_progress", "review", "completed", "on_hold", "cancelled"]
+    status_map = {status: {"count": 0, "projects": []} for status in status_order}
+
+    for result in results:
+        if result["_id"] in status_map:
+            status_map[result["_id"]] = {
+                "count": result["count"],
+                "projects": result["projects"],
+            }
+
+    return resp(200, {
+        "total": total,
+        "overdue": overdue,
+        "statuses": status_map,
+    })
+
+
 # ── Global Search handler ─────────────────────────────────────────────────────
 
 def handle_search(event, db, user):
@@ -1109,19 +1405,26 @@ def handle_search(event, db, user):
         {"impact": regex},
     ]})).limit(10)]
 
-    total = len(teams) + len(members) + len(achievements)
+    # Search projects
+    projects = [to_doc(d) for d in db["projects"].find(active_filter({"$or": [
+        {"name": {"$regex": regex, "$options": "i"}},
+        {"description": {"$regex": regex, "$options": "i"}},
+        {"owner_name": {"$regex": regex, "$options": "i"}},
+    ]})).limit(10)]
 
     return resp(200, {
-        "query":        q_param,
-        "total":        total,
-        "teams":        teams,
-        "members":      members,
+        "query": q_param,
+        "total": len(teams) + len(members) + len(achievements) + len(projects),
+        "teams": teams,
+        "members": members,
         "achievements": achievements,
+        "projects": projects,
         "counts": {
-            "teams":        len(teams),
-            "members":      len(members),
+            "teams": len(teams),
+            "members": len(members),
             "achievements": len(achievements),
-        }
+            "projects": len(projects),
+        },
     })
 
 # ── Stats / dashboard aggregations ───────────────────────────────────────────
@@ -1130,8 +1433,9 @@ def handle_stats(db, user):
     if not can_read(user):
         return auth_error()
 
-    teams = list(db["teams"].find())
-    members = list(db["members"].find())
+    filt = {"deleted": {"$ne": True}}
+    teams = list(db["teams"].find(filt))
+    members = list(db["members"].find(filt))
 
     total_teams = len(teams)
     total_members = len(members)
@@ -1168,12 +1472,19 @@ def handle_stats(db, user):
     has_org_leader = sum(1 for t in teams if t.get("org_leader"))
 
     # Achievement count
-    total_achievements = db["achievements"].count_documents({})
+    total_achievements = db["achievements"].count_documents(filt)
+    total_projects = db["projects"].count_documents(filt)
+    active_projects = db["projects"].count_documents({
+        **filt,
+        "status": {"$in": ["planning", "in_progress", "review"]},
+    })
 
     return resp(200, {
         "total_teams": total_teams,
         "total_members": total_members,
         "total_achievements": total_achievements,
+        "total_projects": total_projects,
+        "active_projects": active_projects,
         "leader_not_colocated": leader_not_colocated,
         "leader_non_direct": leader_non_direct,
         "high_nondirect_ratio": high_nondirect,
@@ -1286,6 +1597,9 @@ def handler(event=None, context=None):
         if resource == "stats":
             return handle_stats(db, user)
 
+        if resource == "pipeline":
+            return handle_pipeline(db, user)
+
         if resource == "search":
             return handle_search(event, db, user)
 
@@ -1294,6 +1608,13 @@ def handler(event=None, context=None):
 
         if resource == "audit":
             return handle_audit(event, method, sub_parts, db, user)
+
+        if resource == "projects":
+            if len(parts) >= 4 and parts[2] == "members":
+                return handle_projects(event, method, parts[1:], db, user)
+            if len(parts) >= 3 and parts[2] == "members":
+                return handle_projects(event, method, parts[1:], db, user)
+            return handle_projects(event, method, sub_parts, db, user)
 
         # Team notes — /teams/{id}/notes
         if resource == "teams" and len(parts) >= 3 and parts[2] == "notes":

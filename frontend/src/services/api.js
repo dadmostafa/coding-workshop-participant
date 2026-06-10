@@ -113,3 +113,29 @@ export const deleteMetadataEntry = id =>
 
 export const getStats = () =>
   client.get('/stats').then(r => r.data)
+
+// ── Projects & Pipeline ─────────────────────────────────────────────────────
+
+export const getProjects = (params = {}) =>
+  client.get('/projects', { params }).then(r => r.data)
+
+export const getProject = id =>
+  client.get(`/projects/${id}`).then(r => r.data)
+
+export const createProject = data =>
+  client.post('/projects', data).then(r => r.data)
+
+export const updateProject = (id, data) =>
+  client.put(`/projects/${id}`, data).then(r => r.data)
+
+export const deleteProject = id =>
+  client.delete(`/projects/${id}`)
+
+export const addProjectMember = (id, data) =>
+  client.post(`/projects/${id}/members`, data).then(r => r.data)
+
+export const removeProjectMember = (id, mid) =>
+  client.delete(`/projects/${id}/members/${mid}`)
+
+export const getPipeline = () =>
+  client.get('/pipeline').then(r => r.data)

@@ -9,7 +9,7 @@ import {
 import {
   Dashboard, Groups, Person, EmojiEvents,
   AdminPanelSettings, Logout, Menu as MenuIcon,
-  Search, Timeline, Security, Close,
+  Search, Timeline, Security, Close, FolderOpen,
 } from '@mui/icons-material'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
@@ -25,6 +25,7 @@ const NAV = [
   { label: 'Dashboard',    path: '/',             icon: <Dashboard /> },
   { label: 'Teams',        path: '/teams',        icon: <Groups /> },
   { label: 'Members',      path: '/members',      icon: <Person /> },
+  { label: 'Projects',     path: '/projects',     icon: <FolderOpen /> },
   { label: 'Achievements', path: '/achievements', icon: <EmojiEvents /> },
   { label: 'Activity',     path: '/activity',     icon: <Timeline /> },
 ]
@@ -63,6 +64,7 @@ function GlobalSearch() {
     setResults(null)
     if (type === 'team')        navigate(`/teams/${id}`)
     if (type === 'member')      navigate(`/members`)
+    if (type === 'project')     navigate(`/projects/${id}`)
     if (type === 'achievement') navigate(`/achievements`)
   }
 
@@ -80,7 +82,7 @@ function GlobalSearch() {
         }}>
           <Search sx={{ color: '#8b8fa8', fontSize: 18 }} />
           <InputBase
-            placeholder="Search teams, members, achievements…"
+            placeholder="Search teams, members, projects, achievements..."
             value={q}
             onChange={handleChange}
             onFocus={() => q.length >= 2 && setOpen(true)}
@@ -152,6 +154,30 @@ function GlobalSearch() {
                           secondary={<Typography variant="caption" color="text.secondary">{m.role} · {m.location}</Typography>}
                         />
                         <Chip label="Member" size="small" sx={{ bgcolor: 'rgba(78,205,196,0.12)', color: '#4ECDC4', fontSize: '0.65rem' }} />
+                      </ListItem>
+                    ))}
+                  </>
+                )}
+
+                {results.projects?.length > 0 && (
+                  <>
+                    <Divider sx={{ borderColor: '#2a2d3e' }} />
+                    <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
+                      <Typography variant="caption" sx={{ color: '#8b8fa8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        Projects ({results.counts.projects})
+                      </Typography>
+                    </Box>
+                    {results.projects.map(p => (
+                      <ListItem key={p.id} onClick={() => handleSelect('project', p.id)}
+                        sx={{ cursor: 'pointer', py: 1, '&:hover': { bgcolor: '#252736' } }}>
+                        <Avatar sx={{ width: 28, height: 28, bgcolor: 'rgba(162,155,254,0.2)', color: '#A29BFE', fontSize: 12, mr: 1.5 }}>
+                          {p.name?.[0] || 'P'}
+                        </Avatar>
+                        <ListItemText
+                          primary={<Typography variant="body2" fontWeight={600}>{p.name}</Typography>}
+                          secondary={<Typography variant="caption" color="text.secondary">{p.owner_name || 'No owner'}</Typography>}
+                        />
+                        <Chip label="Project" size="small" sx={{ bgcolor: 'rgba(162,155,254,0.12)', color: '#A29BFE', fontSize: '0.65rem' }} />
                       </ListItem>
                     ))}
                   </>
