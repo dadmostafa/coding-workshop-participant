@@ -1,166 +1,454 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import {
-  Box, Typography, Button, TextField, InputAdornment,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Paper, IconButton, Chip, CircularProgress, Alert, Dialog,
-  DialogTitle, DialogContent, DialogActions, Grid, Tooltip, Avatar,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  Alert,
+  AlertTitle,
+  Container,
+  Stack,
+  Typography,
+  CircularProgress,
 } from '@mui/material'
-import { Add, Search, Edit, Delete, ArrowForwardIos } from '@mui/icons-material'
-import { getTeams, createTeam, updateTeam, deleteTeam } from '../services/api'
+import {
+  CheckCircle as CheckCircleIcon,
+  Warning as WarningIcon,
+  Error as ErrorIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Add as AddIcon,
+  People as PeopleIcon,
+} from '@mui/icons-material'
 import { useAuth } from '../context/AuthContext'
-import ConfirmDialog from '../components/ConfirmDialog'
-
-const TEAM_COLORS = ['#FF6B6B','#FFD166','#6BCB77','#4ECDC4','#A29BFE','#74B9FF','#FF9F43','#FD79A8']
-const getColor = name => TEAM_COLORS[(name?.charCodeAt(0) || 0) % TEAM_COLORS.length]
-
-const EMPTY = { name: '', description: '', location: '', department: '', team_leader: '', leader_location: '', org_leader: '' }
+import * as api from '../services/api'
 
 export default function TeamsPage() {
-  const { canWrite, canDelete } = useAuth()
-  const navigate = useNavigate()
-  const [teams,    setTeams]    = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState('')
-  const [search,   setSearch]   = useState('')
-  const [open,     setOpen]     = useState(false)
-  const [editing,  setEditing]  = useState(null)
-  const [form,     setForm]     = useState(EMPTY)
-  const [formErr,  setFormErr]  = useState({})
-  const [saving,   setSaving]   = useState(false)
-  const [deleting, setDeleting] = useState(null)
+  const { user, canWrite, canDelete } = useAuth()
+  const [teams, setTeams] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [openDialog, setOpenDialog] = useState(false)
+  const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false)
+  const [selectedTeam, setSelectedTeam] = useState(null)
+  const [formData, setFormData] = useState({
+    name: '',
+    department: '',
+    location: '',
+    team_leader: '',
+    leader_location: '',
+    org_leader: '',
+    description: '',
+  })
+  const [formErrors, setFormErrors] = useState({})
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('')
-    try { setTeams(await getTeams(search ? { search } : {})) }
-    catch { setError('Failed to load teams') }
-    finally { setLoading(false) }
-  }, [search])
+  // Load teams
+  useEffect(() => {
+    loadTeams()
+  }, [])
 
-  useEffect(() => { load() }, [load])
-
-  const openCreate = () => { setEditing(null); setForm(EMPTY); setFormErr({}); setOpen(true) }
-  const openEdit   = t  => { setEditing(t); setForm({ name: t.name||'', description: t.description||'', location: t.location||'', department: t.department||'', team_leader: t.team_leader||'', leader_location: t.leader_location||'', org_leader: t.org_leader||'' }); setFormErr({}); setOpen(true) }
-
-  const handleSave = async () => {
-    if (!form.name.trim()) { setFormErr({ name: 'Team name is required' }); return }
-    setSaving(true)
+  const loadTeams = async () => {
     try {
-      editing ? await updateTeam(editing.id, form) : await createTeam(form)
-      setOpen(false); load()
+      setLoading(true)
+      const data = await api.getTeams()
+      setTeams(Array.isArray(data) ? data : [])
+      setError('')
     } catch (err) {
-      setFormErr({ _api: err.response?.data?.error || 'Save failed' })
-    } finally { setSaving(false) }
+      setError('Failed to load teams: ' + (err.response?.data?.error || err.message))
+      setTeams([])
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const f = key => ({ value: form[key], onChange: e => setForm(p => ({ ...p, [key]: e.target.value })), error: !!formErr[key], helperText: formErr[key] })
+  const validateForm = () => {
+    const errors = {}
+    if (!formData.name?.trim()) errors.name = 'Team name is required'
+    if (!formData.department?.trim()) errors.department = 'Department is required'
+    if (!formData.location?.trim()) errors.location = 'Location is required'
+    if (!formData.team_leader?.trim()) errors.team_leader = 'Team leader is required'
+    return errors
+  }
 
-  return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Typography variant="h5" fontWeight={700}>Teams</Typography>
-          <Typography variant="body2" color="text.secondary">{teams.length} teams total</Typography>
-        </Box>
-        {canWrite && (
-          <Button variant="contained" startIcon={<Add />} onClick={openCreate}
-            sx={{ bgcolor: '#6BCB77', color: '#13141a', '&:hover': { bgcolor: '#5ab868' } }}>
-            New Team
-          </Button>
+  const openCreateDialog = () => {
+    setSelectedTeam(null)
+    setFormData({
+      name: '',
+      department: '',
+      location: '',
+      team_leader: '',
+      leader_location: '',
+      org_leader: '',
+      description: '',
+    })
+    setFormErrors({})
+    setOpenDialog(true)
+  }
+
+  const openEditDialog = team => {
+    setSelectedTeam(team)
+    setFormData(team)
+    setFormErrors({})
+    setOpenDialog(true)
+  }
+
+  const handleSave = async () => {
+    const errors = validateForm()
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      return
+    }
+
+    try {
+      if (selectedTeam) {
+        await api.updateTeam(selectedTeam.id, formData)
+      } else {
+        await api.createTeam(formData)
+      }
+      setOpenDialog(false)
+      loadTeams()
+      setError('')
+    } catch (err) {
+      setError('Failed to save team: ' + (err.response?.data?.error || err.message))
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await api.deleteTeam(selectedTeam.id)
+      setOpenDeleteConfirm(false)
+      loadTeams()
+      setError('')
+    } catch (err) {
+      setError('Failed to delete team: ' + (err.response?.data?.error || err.message))
+    }
+  }
+
+  const handleCloseDialog = () => {
+    setOpenDialog(false)
+    setSelectedTeam(null)
+  }
+
+  // Health badge component
+  const HealthBadge = ({ team }) => {
+    const health = team.health || {}
+    const status = health.status || 'healthy'
+    
+    const getIcon = () => {
+      if (status === 'critical') return <ErrorIcon sx={{ color: '#ff5252' }} />
+      if (status === 'warning') return <WarningIcon sx={{ color: '#ffb74d' }} />
+      return <CheckCircleIcon sx={{ color: '#66bb6a' }} />
+    }
+
+    const getColor = () => {
+      if (status === 'critical') return 'error'
+      if (status === 'warning') return 'warning'
+      return 'success'
+    }
+
+    const issueCount = (health.errors?.length || 0) + (health.warnings?.length || 0)
+
+    return (
+      <Stack direction="row" spacing={1} alignItems="center">
+        {getIcon()}
+        <Stack spacing={0.5}>
+          <Typography variant="caption" sx={{ fontWeight: 600 }}>
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+          </Typography>
+          {issueCount > 0 && (
+            <Chip
+              size="small"
+              label={`${issueCount} issue${issueCount !== 1 ? 's' : ''}`}
+              variant="outlined"
+              color={getColor()}
+            />
+          )}
+        </Stack>
+      </Stack>
+    )
+  }
+
+  // Health issues panel
+  const HealthIssuesPanel = ({ team }) => {
+    const health = team.health || {}
+    const errors = health.errors || []
+    const warnings = health.warnings || []
+
+    if (errors.length === 0 && warnings.length === 0) return null
+
+    return (
+      <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(255, 0, 0, 0.05)', borderRadius: 1 }}>
+        {errors.length > 0 && (
+          <Stack spacing={1} sx={{ mb: errors.length && warnings.length ? 2 : 0 }}>
+            {errors.map((err, i) => (
+              <Alert severity="error" key={i} icon={<ErrorIcon />} sx={{ mb: 0.5 }}>
+                <AlertTitle>{err.code}</AlertTitle>
+                {err.message}
+              </Alert>
+            ))}
+          </Stack>
+        )}
+        {warnings.length > 0 && (
+          <Stack spacing={1}>
+            {warnings.map((warn, i) => (
+              <Alert severity="warning" key={i} icon={<WarningIcon />} sx={{ mb: 0.5 }}>
+                <AlertTitle>{warn.code}</AlertTitle>
+                {warn.message}
+              </Alert>
+            ))}
+          </Stack>
         )}
       </Box>
+    )
+  }
 
-      <TextField
-        placeholder="Search teams…" value={search}
-        onChange={e => setSearch(e.target.value)}
-        size="small" sx={{ mb: 3, width: 300 }}
-        InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ color: '#8b8fa8' }} /></InputAdornment> }}
-      />
+  // Health summary stats
+  const healthStats = teams.reduce(
+    (acc, t) => {
+      const status = t.health?.status || 'healthy'
+      acc[status] = (acc[status] || 0) + 1
+      return acc
+    },
+    { healthy: 0, warning: 0, critical: 0 }
+  )
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+  return (
+    <Container maxWidth="lg">
+      <Stack spacing={3} sx={{ py: 3 }}>
+        {/* Header */}
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Stack spacing={1}>
+            <Typography variant="h4">Teams</Typography>
+            <Stack direction="row" spacing={2}>
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <CheckCircleIcon sx={{ color: '#66bb6a', fontSize: '1.2rem' }} />
+                <Typography variant="body2">{healthStats.healthy} Healthy</Typography>
+              </Stack>
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <WarningIcon sx={{ color: '#ffb74d', fontSize: '1.2rem' }} />
+                <Typography variant="body2">{healthStats.warning} Warning</Typography>
+              </Stack>
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <ErrorIcon sx={{ color: '#ff5252', fontSize: '1.2rem' }} />
+                <Typography variant="body2">{healthStats.critical} Critical</Typography>
+              </Stack>
+            </Stack>
+          </Stack>
+          {canWrite && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={openCreateDialog}
+            >
+              New Team
+            </Button>
+          )}
+        </Stack>
 
-      <TableContainer component={Paper} sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e' }}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Team</TableCell>
-              <TableCell>Department</TableCell>
-              <TableCell>Location</TableCell>
-              <TableCell>Leader</TableCell>
-              <TableCell>Org Leader</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}>
-                <CircularProgress size={28} sx={{ color: '#6BCB77' }} />
-              </TableCell></TableRow>
-            ) : teams.length === 0 ? (
-              <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6, color: '#8b8fa8' }}>
-                No teams yet — create your first one
-              </TableCell></TableRow>
-            ) : teams.map(t => (
-              <TableRow key={t.id}>
-                <TableCell>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Avatar sx={{ width: 32, height: 32, bgcolor: `${getColor(t.name)}20`, color: getColor(t.name), fontSize: 13, fontWeight: 700, border: `1px solid ${getColor(t.name)}40` }}>
-                      {t.name[0].toUpperCase()}
-                    </Avatar>
-                    <Box>
-                      <Typography variant="body2" fontWeight={600}>{t.name}</Typography>
-                      {t.description && <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: 200, display: 'block' }}>{t.description}</Typography>}
-                    </Box>
-                  </Box>
-                </TableCell>
-                <TableCell><Typography variant="body2" color="text.secondary">{t.department || '—'}</Typography></TableCell>
-                <TableCell><Typography variant="body2" color="text.secondary">{t.location || '—'}</Typography></TableCell>
-                <TableCell>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <Typography variant="body2" color="text.secondary">{t.team_leader || '—'}</Typography>
-                    {t.leader_location && t.location && t.leader_location !== t.location && (
-                      <Chip label="remote" size="small" sx={{ bgcolor: 'rgba(255,159,67,0.15)', color: '#FF9F43', border: '1px solid rgba(255,159,67,0.3)', fontSize: '0.65rem', height: 18 }} />
-                    )}
-                  </Box>
-                </TableCell>
-                <TableCell><Typography variant="body2" color="text.secondary">{t.org_leader || '—'}</Typography></TableCell>
-                <TableCell align="right">
-                  <Tooltip title="View"><IconButton size="small" onClick={() => navigate(`/teams/${t.id}`)} sx={{ color: '#8b8fa8', '&:hover': { color: '#6BCB77' } }}><ArrowForwardIos sx={{ fontSize: 14 }} /></IconButton></Tooltip>
-                  {canWrite && <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(t)} sx={{ color: '#8b8fa8', '&:hover': { color: '#FFD166' } }}><Edit sx={{ fontSize: 16 }} /></IconButton></Tooltip>}
-                  {canDelete && <Tooltip title="Delete"><IconButton size="small" onClick={() => setDeleting(t)} sx={{ color: '#8b8fa8', '&:hover': { color: '#FF6B6B' } }}><Delete sx={{ fontSize: 16 }} /></IconButton></Tooltip>}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+        {/* Error alert */}
+        {error && (
+          <Alert severity="error" onClose={() => setError('')}>
+            {error}
+          </Alert>
+        )}
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ color: 'text.primary' }}>{editing ? 'Edit Team' : 'New Team'}</DialogTitle>
-        <DialogContent>
-          {formErr._api && <Alert severity="error" sx={{ mb: 1 }}>{formErr._api}</Alert>}
-          <Grid container spacing={1} sx={{ mt: 0.5 }}>
-            <Grid item xs={12}><TextField label="Team Name" fullWidth margin="dense" required {...f('name')} /></Grid>
-            <Grid item xs={12}><TextField label="Description" fullWidth margin="dense" {...f('description')} /></Grid>
-            <Grid item xs={6}><TextField label="Team Location" fullWidth margin="dense" {...f('location')} /></Grid>
-            <Grid item xs={6}><TextField label="Department" fullWidth margin="dense" {...f('department')} /></Grid>
-            <Grid item xs={6}><TextField label="Team Leader" fullWidth margin="dense" {...f('team_leader')} /></Grid>
-            <Grid item xs={6}><TextField label="Leader Location" fullWidth margin="dense" {...f('leader_location')} /></Grid>
-            <Grid item xs={12}><TextField label="Org Leader" fullWidth margin="dense" {...f('org_leader')} /></Grid>
-          </Grid>
+        {/* Loading */}
+        {loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
+        )}
+
+        {/* Teams table */}
+        {!loading && teams.length > 0 && (
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                  <TableCell sx={{ fontWeight: 600 }}>Name</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Department</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Location</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Members</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Health</TableCell>
+                  <TableCell sx={{ fontWeight: 600, textAlign: 'right' }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {teams.map(team => {
+                  const health = team.health || {}
+                  const understaffed =
+                    health.member_count !== undefined && health.member_count < 5
+                  return (
+                    <TableRow key={team.id}>
+                      <TableCell>{team.name}</TableCell>
+                      <TableCell>{team.department}</TableCell>
+                      <TableCell>{team.location}</TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <PeopleIcon sx={{ fontSize: '1.2rem' }} />
+                          <span>{health.member_count || 0}</span>
+                          {understaffed && (
+                            <Chip
+                              size="small"
+                              label="Understaffed"
+                              color="warning"
+                              variant="outlined"
+                            />
+                          )}
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <HealthBadge team={team} />
+                        <HealthIssuesPanel team={team} />
+                      </TableCell>
+                      <TableCell sx={{ textAlign: 'right' }}>
+                        <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                          {canWrite && (
+                            <Button
+                              size="small"
+                              startIcon={<EditIcon />}
+                              onClick={() => openEditDialog(team)}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="small"
+                              color="error"
+                              startIcon={<DeleteIcon />}
+                              onClick={() => {
+                                setSelectedTeam(team)
+                                setOpenDeleteConfirm(true)
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          )}
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        {!loading && teams.length === 0 && (
+          <Card>
+            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+              <Typography color="textSecondary">No teams found</Typography>
+            </CardContent>
+          </Card>
+        )}
+      </Stack>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {selectedTeam ? 'Edit Team' : 'Create New Team'}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Stack spacing={2}>
+            <TextField
+              label="Team Name *"
+              value={formData.name}
+              onChange={e => setFormData({ ...formData, name: e.target.value })}
+              fullWidth
+              error={!!formErrors.name}
+              helperText={formErrors.name}
+            />
+            <TextField
+              label="Department *"
+              value={formData.department}
+              onChange={e =>
+                setFormData({ ...formData, department: e.target.value })
+              }
+              fullWidth
+              error={!!formErrors.department}
+              helperText={formErrors.department}
+            />
+            <TextField
+              label="Location *"
+              value={formData.location}
+              onChange={e => setFormData({ ...formData, location: e.target.value })}
+              fullWidth
+              error={!!formErrors.location}
+              helperText={formErrors.location}
+            />
+            <TextField
+              label="Team Leader *"
+              value={formData.team_leader}
+              onChange={e =>
+                setFormData({ ...formData, team_leader: e.target.value })
+              }
+              fullWidth
+              error={!!formErrors.team_leader}
+              helperText={formErrors.team_leader || 'Every team must have a designated leader'}
+            />
+            <TextField
+              label="Leader Location"
+              value={formData.leader_location}
+              onChange={e =>
+                setFormData({ ...formData, leader_location: e.target.value })
+              }
+              fullWidth
+            />
+            <TextField
+              label="Org Leader"
+              value={formData.org_leader}
+              onChange={e => setFormData({ ...formData, org_leader: e.target.value })}
+              fullWidth
+            />
+            <TextField
+              label="Description"
+              value={formData.description}
+              onChange={e =>
+                setFormData({ ...formData, description: e.target.value })
+              }
+              fullWidth
+              multiline
+              rows={3}
+            />
+          </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setOpen(false)} sx={{ color: '#8b8fa8' }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving}
-            sx={{ bgcolor: '#6BCB77', color: '#13141a', '&:hover': { bgcolor: '#5ab868' } }}>
-            {saving ? <CircularProgress size={18} sx={{ color: '#13141a' }} /> : 'Save'}
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Cancel</Button>
+          <Button onClick={handleSave} variant="contained">
+            Save
           </Button>
         </DialogActions>
       </Dialog>
 
-      <ConfirmDialog open={!!deleting} title="Delete Team" message={`Delete "${deleting?.name}"?`}
-        onConfirm={async () => { await deleteTeam(deleting.id); setDeleting(null); load() }}
-        onCancel={() => setDeleting(null)} />
-    </Box>
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={openDeleteConfirm} onClose={() => setOpenDeleteConfirm(false)}>
+        <DialogTitle>Delete Team</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete "{selectedTeam?.name}"?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDeleteConfirm(false)}>Cancel</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Container>
   )
 }

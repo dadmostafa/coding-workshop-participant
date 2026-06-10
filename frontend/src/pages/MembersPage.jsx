@@ -180,7 +180,18 @@ export default function MembersPage() {
       </Dialog>
 
       <ConfirmDialog open={!!deleting} title="Remove Member" message={`Remove "${deleting?.name}"?`}
-        onConfirm={async () => { await deleteMember(deleting.id); setDeleting(null); load() }}
+        onConfirm={async () => { 
+          try {
+            const result = await deleteMember(deleting.id)
+            if (result?.data?.alert) {
+              setError(`⚠️ ${result.data.alert.message}`)
+            }
+            setDeleting(null)
+            load()
+          } catch (err) {
+            setError('Failed to delete member: ' + (err.response?.data?.error || err.message))
+          }
+        }}
         onCancel={() => setDeleting(null)} />
     </Box>
   )

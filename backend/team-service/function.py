@@ -28,6 +28,11 @@ logger.setLevel(logging.INFO)
 
 MAX_BODY_SIZE = 50_000
 
+# ── Team constraints ──────────────────────────────────────────────────────────
+TEAM_MIN_MEMBERS    = 5
+TEAM_MAX_MEMBERS    = 20
+TEAM_REQUIRES_LEADER = True
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -108,6 +113,101 @@ def soft_delete(col, oid: ObjectId, user: dict) -> bool:
         }}
     )
     return result.modified_count > 0
+
+
+def get_team_health(db, team_id: str) -> dict:
+    """
+    Calculate team health status based on industry standard constraints.
+    Returns health report with warnings and status.
+    """
+    filt    = {"deleted": {"$ne": True}}
+    team    = db["teams"].find_one({"_id": ObjectId(team_id), **filt})
+    if not team:
+        return {}
+
+    members = list(db["members"].find({"team_id": team_id, **filt}))
+    leader  = next((m for m in members if m.get("is_team_leader")), None)
+
+    warnings = []
+    errors   = []
+
+    # Check member count
+    count = len(members)
+    if count == 0:
+        errors.append({
+            "code":    "NO_MEMBERS",
+            "message": "Team has no members",
+            "severity": "critical",
+        })
+    elif count < TEAM_MIN_MEMBERS:
+        warnings.append({
+            "code":    "UNDERSTAFFED",
+            "message": f"Team is understaffed — {count}/{TEAM_MIN_MEMBERS} minimum members",
+            "severity": "warning",
+        })
+    elif count > TEAM_MAX_MEMBERS:
+        warnings.append({
+            "code":    "OVERSTAFFED",
+            "message": f"Team exceeds recommended size — {count}/{TEAM_MAX_MEMBERS} maximum",
+            "severity": "warning",
+        })
+
+    # Check leader
+    if TEAM_REQUIRES_LEADER and not leader:
+        errors.append({
+            "code":    "NO_LEADER",
+            "message": "Team has no designated leader",
+            "severity": "critical",
+        })
+
+    # Check leader location vs team location
+    if leader and team.get("location") and team.get("leader_location"):
+        if leader.get("location") and \
+           leader["location"].lower() != team["location"].lower() and \
+           leader.get("location").lower() != "remote":
+            warnings.append({
+                "code":    "LEADER_REMOTE",
+                "message": f"Team leader is not co-located with the team",
+                "severity": "warning",
+            })
+
+    # Check non-direct ratio
+    non_direct = [m for m in members if m.get("employment_type") == "non-direct"]
+    if count > 0:
+        nd_ratio = len(non_direct) / count
+        if nd_ratio > 0.5:
+            errors.append({
+                "code":    "HIGH_CONTRACTOR_RATIO",
+                "message": f"Contractor ratio is {round(nd_ratio*100)}% — exceeds 50% threshold",
+                "severity": "critical",
+            })
+        elif nd_ratio > 0.2:
+            warnings.append({
+                "code":    "ELEVATED_CONTRACTOR_RATIO",
+                "message": f"Contractor ratio is {round(nd_ratio*100)}% — above 20% guideline",
+                "severity": "warning",
+            })
+
+    # Overall status
+    if errors:
+        status = "critical"
+    elif warnings:
+        status = "warning"
+    else:
+        status = "healthy"
+
+    return {
+        "team_id":      team_id,
+        "team_name":    team.get("name", ""),
+        "member_count": count,
+        "has_leader":   leader is not None,
+        "leader_name":  leader.get("name", "") if leader else None,
+        "status":       status,
+        "errors":       errors,
+        "warnings":     warnings,
+        "non_direct_count": len(non_direct),
+        "non_direct_ratio": round(len(non_direct) / count * 100) if count else 0,
+    }
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
@@ -618,6 +718,11 @@ def handle_teams(event, method, path_parts, db, user):
         if q.get("location"):
             query["location"] = {"$regex": escape_regex(q["location"]), "$options": "i"}
         docs = [to_doc(d) for d in col.find(active_filter(query)).sort([("name", 1)])]
+
+        # Attach health status to each team
+        for doc in docs:
+            doc["health"] = get_team_health(db, doc["id"])
+
         return resp(200, docs)
 
     if method == "POST":
@@ -626,22 +731,42 @@ def handle_teams(event, method, path_parts, db, user):
         body = parse_body(event)
         if not (body.get("name") or "").strip():
             return err(400, "name is required")
+        if not (body.get("team_leader") or "").strip():
+            return err(400, "team_leader is required — every team must have a designated leader")
+        if not (body.get("location") or "").strip():
+            return err(400, "location is required — team location must be specified")
+        if not (body.get("department") or "").strip():
+            return err(400, "department is required")
         if col.find_one({"name": body["name"], "deleted": {"$ne": True}}):
             return err(400, "Team name already exists")
+
+        now = datetime.now(timezone.utc)
         doc = {
             "name":            body["name"].strip(),
             "description":     body.get("description", ""),
-            "location":        body.get("location", ""),
-            "department":      body.get("department", ""),
-            "team_leader":     body.get("team_leader", ""),
-            "leader_location": body.get("leader_location", ""),
-            "org_leader":      body.get("org_leader", ""),
-            "created_at":      datetime.now(timezone.utc),
-            "updated_at":      datetime.now(timezone.utc),
+            "location":        body["location"].strip(),
+            "department":      body["department"].strip(),
+            "team_leader":     body["team_leader"].strip(),
+            "leader_location": body.get("leader_location", "").strip(),
+            "org_leader":      body.get("org_leader", "").strip(),
+            "created_at":      now,
+            "updated_at":      now,
         }
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
         doc.pop("_id", None)
+
+        # Add initial health report
+        doc["health"] = {
+            "status":   "critical",
+            "errors":   [
+                {"code": "NO_MEMBERS",  "message": "Team has no members yet",           "severity": "critical"},
+                {"code": "NO_LEADER",   "message": "No member assigned as team leader", "severity": "critical"},
+            ],
+            "warnings": [],
+            "member_count": 0,
+        }
+
         log_audit(db, user, "CREATE", "teams", doc["id"], details=doc["name"])
         return resp(201, doc)
 
@@ -653,7 +778,9 @@ def handle_teams(event, method, path_parts, db, user):
         doc = col.find_one({"_id": ObjectId(tid), "deleted": {"$ne": True}})
         if not doc:
             return err(404, "Team not found")
-        return resp(200, to_doc(doc))
+        result      = to_doc(doc)
+        result["health"] = get_team_health(db, tid)
+        return resp(200, result)
 
     if method == "PUT":
         if not can_write(user):
@@ -675,6 +802,10 @@ def handle_teams(event, method, path_parts, db, user):
         doc = col.find_one({"_id": ObjectId(tid)})
         log_audit(db, user, "UPDATE", "teams", tid, changes=update)
         return resp(200, to_doc(doc))
+
+    if method == "GET" and len(path_parts) >= 2 and path_parts[1] == "health":
+        """GET /teams/{id}/health — Get team health report."""
+        return resp(200, get_team_health(db, tid))
 
     if method == "DELETE":
         if not can_delete(user):
@@ -778,11 +909,42 @@ def handle_members(event, method, path_parts, db, user):
     if method == "DELETE":
         if not can_delete(user):
             return permission_error("manager")
+
+        # Get member before deletion for health check
+        member_doc = col.find_one({"_id": ObjectId(mid), "deleted": {"$ne": True}})
+        if not member_doc:
+            return err(404, "Member not found")
+
+        was_leader = member_doc.get("is_team_leader", False)
+        team_id    = member_doc.get("team_id", "")
+
+        # Soft delete
         deleted = soft_delete(col, ObjectId(mid), user)
         if not deleted:
             return err(404, "Member not found")
+
         log_audit(db, user, "DELETE", "members", mid)
-        return resp(204, {})
+
+        # Check team health after deletion
+        health = get_team_health(db, team_id) if team_id else {}
+
+        response = {"message": "Member removed", "health": health}
+
+        # Add prominent warnings
+        if was_leader:
+            response["alert"] = {
+                "type":    "leader_removed",
+                "message": "⚠️ Team leader was removed — assign a new leader immediately",
+                "severity": "critical",
+            }
+        elif health.get("member_count", 0) < TEAM_MIN_MEMBERS:
+            response["alert"] = {
+                "type":    "understaffed",
+                "message": f"⚠️ Team is now understaffed ({health['member_count']}/{TEAM_MIN_MEMBERS} minimum members)",
+                "severity": "warning",
+            }
+
+        return resp(200, response)
 
     return err(405, "Method not allowed")
 
@@ -1831,6 +1993,15 @@ def handle_stats(db, user):
         "org_leader": {"$exists": True, "$ne": ""}
     })
 
+    # ── Team health summary ───────────────────────────────────────────────────
+    all_teams = list(db["teams"].find(filt, {"_id": 1}))
+    health_counts = {"healthy": 0, "warning": 0, "critical": 0}
+    for team_doc in all_teams:
+        health = get_team_health(db, str(team_doc["_id"]))
+        status = health.get("status", "healthy")
+        if status in health_counts:
+            health_counts[status] += 1
+
     return resp(200, {
         # Project health — answers the 6 business questions
         "total_projects":     total_projects,
@@ -1850,6 +2021,9 @@ def handle_stats(db, user):
         "leader_non_direct":     leader_non_direct,
         "high_nondirect_ratio":  high_nondirect_ratio,
         "has_org_leader":        has_org_leader,
+
+        # Team health summary
+        "team_health_summary": health_counts,
     })
 
 

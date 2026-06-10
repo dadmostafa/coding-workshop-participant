@@ -61,6 +61,9 @@ export const updateTeam = (id, data) =>
 export const deleteTeam = id =>
   client.delete(`/teams/${id}`)
 
+export const getTeamHealth = id =>
+  client.get(`/teams/${id}/health`).then(r => r.data)
+
 // ── Members ───────────────────────────────────────────────────────────────────
 
 export const getMembers = (params = {}) =>

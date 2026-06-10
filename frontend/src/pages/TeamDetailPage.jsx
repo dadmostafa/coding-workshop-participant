@@ -3,9 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Box, Typography, Button, Grid, Card, CardContent,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Paper, Chip, CircularProgress, Alert, Divider, IconButton, Tooltip, Avatar,
+  Paper, Chip, CircularProgress, Alert, AlertTitle, Divider, IconButton, Tooltip, Avatar, Stack,
 } from '@mui/material'
-import { ArrowBack, Delete, Add, EmojiEvents, Person } from '@mui/icons-material'
+import { ArrowBack, Delete, Add, EmojiEvents, Person, CheckCircle as CheckCircleIcon, Warning as WarningIcon, Error as ErrorIcon } from '@mui/icons-material'
 import { getTeam, getMembers, getAchievements, deleteMember, deleteAchievement } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -90,6 +90,34 @@ export default function TeamDetailPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Health Status Panel */}
+      {team.health && (team.health.errors?.length > 0 || team.health.warnings?.length > 0) && (
+        <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(255, 0, 0, 0.05)', borderRadius: 1, border: '1px solid rgba(255, 0, 0, 0.1)' }}>
+          <Stack spacing={1.5}>
+            {team.health.errors && team.health.errors.length > 0 && (
+              <Stack spacing={1}>
+                {team.health.errors.map((err, i) => (
+                  <Alert severity="error" key={i} icon={<ErrorIcon />}>
+                    <AlertTitle>{err.code}</AlertTitle>
+                    {err.message}
+                  </Alert>
+                ))}
+              </Stack>
+            )}
+            {team.health.warnings && team.health.warnings.length > 0 && (
+              <Stack spacing={1}>
+                {team.health.warnings.map((warn, i) => (
+                  <Alert severity="warning" key={i} icon={<WarningIcon />}>
+                    <AlertTitle>{warn.code}</AlertTitle>
+                    {warn.message}
+                  </Alert>
+                ))}
+              </Stack>
+            )}
+          </Stack>
+        </Box>
+      )}
 
       <Divider sx={{ borderColor: '#2a2d3e', mb: 3 }} />
 
