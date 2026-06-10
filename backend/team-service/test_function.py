@@ -109,17 +109,23 @@ class TestRBAC:
 
     def test_contributor_can_create(self):
         import function
+        from bson import ObjectId
+        # Must include all required fields now
         mock_col = MagicMock()
-        mock_col.count_documents.return_value = 1
-        mock_col.find_one.return_value = None
+        mock_col.find_one.return_value = None  # name doesn't exist yet
         inserted = MagicMock()
         inserted.inserted_id = ObjectId()
         mock_col.insert_one.return_value = inserted
         mock_db = MagicMock()
         mock_db.__getitem__ = lambda s, k: mock_col
+        event = make_event("POST", "/teams", token=self.contrib_token, body={
+            "name":        "New Team",
+            "team_leader": "Jane Smith",
+            "location":    "New York",
+            "department":  "Technology",
+        })
         with patch("function.get_db", return_value=mock_db):
-            r = function.handler(make_event("POST", "/teams",
-                                            body={"name": "New Team"}, token=self.contrib_token))
+            r = function.handler(event)
         assert r["statusCode"] == 201
 
     def test_contributor_cannot_delete(self):
@@ -135,14 +141,17 @@ class TestRBAC:
 
     def test_manager_can_delete(self):
         import function
+        from bson import ObjectId
+        tid      = str(ObjectId())
         mock_col = MagicMock()
-        mock_col.count_documents.return_value = 1
-        mock_col.delete_one.return_value = MagicMock(deleted_count=1)
-        mock_db = MagicMock()
+        mock_col.find.return_value    = MagicMock(sort=MagicMock(return_value=[]))
+        mock_col.find_one.return_value = {"_id": ObjectId(tid), "name": "Test Team"}
+        mock_col.update_one.return_value = MagicMock(modified_count=1)
+        mock_db  = MagicMock()
         mock_db.__getitem__ = lambda s, k: mock_col
-        tid = fake_oid()
         with patch("function.get_db", return_value=mock_db):
-            r = function.handler(make_event("DELETE", f"/teams/{tid}", token=self.manager_token))
+            r = function.handler(make_event("DELETE", f"/teams/{tid}",
+                                            token=self.manager_token))
         assert r["statusCode"] == 204
 
 
@@ -202,10 +211,17 @@ class TestTeams:
 
     def test_delete_team_not_found(self):
         import function
-        mock_db, _ = self._mock_db(delete_count=0)
-        tid = fake_oid()
+        from bson import ObjectId
+        tid      = str(ObjectId())
+        mock_col = MagicMock()
+        mock_col.find.return_value     = MagicMock(sort=MagicMock(return_value=[]))
+        mock_col.find_one.return_value = None
+        mock_col.update_one.return_value = MagicMock(modified_count=0)
+        mock_db  = MagicMock()
+        mock_db.__getitem__ = lambda s, k: mock_col
         with patch("function.get_db", return_value=mock_db):
-            r = function.handler(make_event("DELETE", f"/teams/{tid}", token=self.admin_token))
+            r = function.handler(make_event("DELETE", f"/teams/{tid}",
+                                            token=self.admin_token))
         assert r["statusCode"] == 404
 
 
