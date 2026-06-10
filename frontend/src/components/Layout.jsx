@@ -2,52 +2,56 @@ import { useState, useCallback } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   Box, Tooltip, Avatar, Divider, Menu, MenuItem,
-  Typography, useMediaQuery, useTheme, Drawer, IconButton,
-  InputBase, Paper, List, ListItem, ListItemText, Chip,
-  ClickAwayListener,
+  Typography, useMediaQuery, useTheme, IconButton,
+  InputBase, Paper, ListItem, ListItemText,
+  Chip, ClickAwayListener, Drawer,
 } from '@mui/material'
 import {
   Dashboard, Groups, Person, EmojiEvents,
-  AdminPanelSettings, Logout, Menu as MenuIcon,
-  Search, Timeline, Security, Close, FolderOpen,
+  AdminPanelSettings, Logout, Search, Close,
+  Timeline, Security, FolderOpen, Menu as MenuIcon,
 } from '@mui/icons-material'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 
-const SIDEBAR_W = 72
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
 
 const ROLE_COLORS = {
-  admin: '#FF6B6B', manager: '#FFD166', contributor: '#6BCB77', viewer: '#4ECDC4'
+  admin: '#FF6B6B', manager: '#FFD166',
+  contributor: '#6BCB77', viewer: '#4ECDC4'
 }
 
 const NAV = [
-  { label: 'Dashboard',    path: '/',             icon: <Dashboard /> },
-  { label: 'Teams',        path: '/teams',        icon: <Groups /> },
-  { label: 'Members',      path: '/members',      icon: <Person /> },
-  { label: 'Projects',     path: '/projects',     icon: <FolderOpen /> },
-  { label: 'Achievements', path: '/achievements', icon: <EmojiEvents /> },
-  { label: 'Activity',     path: '/activity',     icon: <Timeline /> },
+  { label: 'Dashboard', path: '/', icon: <Dashboard sx={{ fontSize: 16 }} /> },
+  { label: 'Projects', path: '/projects', icon: <FolderOpen sx={{ fontSize: 16 }} /> },
+  { label: 'Teams', path: '/teams', icon: <Groups sx={{ fontSize: 16 }} /> },
+  { label: 'Members', path: '/members', icon: <Person sx={{ fontSize: 16 }} /> },
+  { label: 'Achievements', path: '/achievements', icon: <EmojiEvents sx={{ fontSize: 16 }} /> },
+  { label: 'Activity', path: '/activity', icon: <Timeline sx={{ fontSize: 16 }} /> },
 ]
 
 function GlobalSearch() {
-  const navigate   = useNavigate()
-  const [q,        setQ]       = useState('')
-  const [results,  setResults] = useState(null)
-  const [open,     setOpen]    = useState(false)
-  const [loading,  setLoading] = useState(false)
+  const navigate = useNavigate()
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const search = useCallback(async (val) => {
     if (val.length < 2) { setResults(null); return }
     setLoading(true)
     try {
       const token = localStorage.getItem('acme_token')
-      const r = await axios.get(`${BASE}/search?q=${encodeURIComponent(val)}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const r = await axios.get(
+        `${BASE}/search?q=${encodeURIComponent(val)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
       setResults(r.data)
-    } catch { setResults(null) }
-    finally { setLoading(false) }
+    } catch {
+      setResults(null)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   const handleChange = (e) => {
@@ -62,154 +66,129 @@ function GlobalSearch() {
     setOpen(false)
     setQ('')
     setResults(null)
-    if (type === 'team')        navigate(`/teams/${id}`)
-    if (type === 'member')      navigate(`/members`)
-    if (type === 'project')     navigate(`/projects/${id}`)
-    if (type === 'achievement') navigate(`/achievements`)
+    if (type === 'team') navigate(`/teams/${id}`)
+    if (type === 'member') navigate('/members')
+    if (type === 'achievement') navigate('/achievements')
+    if (type === 'project') navigate(`/projects/${id}`)
   }
-
-  const total = results ? results.total : 0
 
   return (
     <ClickAwayListener onClickAway={() => setOpen(false)}>
-      <Box sx={{ position: 'relative', flexGrow: 1, maxWidth: 480 }}>
+      <Box sx={{ position: 'relative', width: '100%', maxWidth: 560 }}>
         <Paper sx={{
-          display: 'flex', alignItems: 'center', gap: 1,
-          px: 2, py: 0.8, bgcolor: '#16171f',
-          border: '1px solid', borderColor: open ? '#6BCB77' : '#2a2d3e',
-          borderRadius: 3, transition: 'all 0.2s ease',
-          boxShadow: open ? '0 0 0 3px rgba(107,203,119,0.15)' : 'none',
+          display: 'flex', alignItems: 'center', gap: 1.5,
+          px: 2.5, py: 1.2,
+          bgcolor: '#16171f',
+          border: '1px solid',
+          borderColor: open ? '#6BCB77' : '#2a2d3e',
+          borderRadius: 4,
+          transition: 'all 0.2s ease',
+          boxShadow: open ? '0 0 0 3px rgba(107,203,119,0.1)' : 'none',
         }}>
-          <Search sx={{ color: '#8b8fa8', fontSize: 18 }} />
+          <Search sx={{ color: '#8b8fa8', fontSize: 20, flexShrink: 0 }} />
           <InputBase
             placeholder="Search teams, members, projects, achievements..."
             value={q}
             onChange={handleChange}
             onFocus={() => q.length >= 2 && setOpen(true)}
-            sx={{ flexGrow: 1, fontSize: '0.875rem', color: 'text.primary',
-              '& input::placeholder': { color: '#8b8fa8' } }}
+            sx={{
+              flexGrow: 1, fontSize: '0.9rem', color: 'text.primary',
+              '& input::placeholder': { color: '#8b8fa8', opacity: 1 },
+            }}
           />
           {q && (
-            <IconButton size="small" onClick={() => { setQ(''); setResults(null); setOpen(false) }}
-              sx={{ color: '#8b8fa8', p: 0.3 }}>
+            <IconButton
+              size="small"
+              onClick={() => {
+                setQ('')
+                setResults(null)
+                setOpen(false)
+              }}
+              sx={{ color: '#8b8fa8', p: 0.3 }}
+            >
               <Close sx={{ fontSize: 16 }} />
             </IconButton>
           )}
         </Paper>
 
-        {/* Results dropdown */}
         {open && results && (
           <Paper sx={{
             position: 'absolute', top: '110%', left: 0, right: 0,
             bgcolor: '#1e2029', border: '1px solid #2a2d3e',
             borderRadius: 3, zIndex: 9999,
-            boxShadow: '0 16px 48px rgba(0,0,0,0.4)',
-            maxHeight: 400, overflow: 'auto',
+            boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
+            maxHeight: 420, overflow: 'auto',
           }}>
-            {total === 0 ? (
-              <Box sx={{ p: 3, textAlign: 'center', color: '#8b8fa8' }}>
-                <Typography variant="body2">No results for "{q}"</Typography>
+            {results.total === 0 ? (
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  No results for "{q}"
+                </Typography>
               </Box>
             ) : (
               <>
-                {results.teams?.length > 0 && (
-                  <>
-                    <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
-                      <Typography variant="caption" sx={{ color: '#8b8fa8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                        Teams ({results.counts.teams})
-                      </Typography>
+                {[
+                  { key: 'projects', label: 'Projects', color: '#A29BFE', type: 'project' },
+                  { key: 'teams', label: 'Teams', color: '#6BCB77', type: 'team' },
+                  { key: 'members', label: 'Members', color: '#4ECDC4', type: 'member' },
+                  { key: 'achievements', label: 'Achievements', color: '#FFD166', type: 'achievement' },
+                ].map((section) => {
+                  const items = results[section.key] || []
+                  if (!items.length) return null
+                  return (
+                    <Box key={section.key}>
+                      <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
+                        <Typography variant="caption" sx={{
+                          color: '#8b8fa8', fontWeight: 700,
+                          textTransform: 'uppercase', letterSpacing: '0.08em',
+                        }}>
+                          {section.label} ({items.length})
+                        </Typography>
+                      </Box>
+                      {items.map((item) => (
+                        <ListItem
+                          key={item.id}
+                          onClick={() => handleSelect(section.type, item.id)}
+                          sx={{
+                            cursor: 'pointer', py: 1,
+                            '&:hover': { bgcolor: '#252736' },
+                          }}
+                        >
+                          <Avatar sx={{
+                            width: 28, height: 28, mr: 1.5,
+                            bgcolor: `${section.color}20`,
+                            color: section.color,
+                            fontSize: 12, fontWeight: 700,
+                          }}>
+                            {(item.name || item.title || '?')[0].toUpperCase()}
+                          </Avatar>
+                          <ListItemText
+                            primary={(
+                              <Typography variant="body2" fontWeight={600}>
+                                {item.name || item.title}
+                              </Typography>
+                            )}
+                            secondary={(
+                              <Typography variant="caption" color="text.secondary">
+                                {item.department || item.role || item.impact || item.status || ''}
+                              </Typography>
+                            )}
+                          />
+                          <Chip label={section.label} size="small" sx={{
+                            bgcolor: `${section.color}12`,
+                            color: section.color,
+                            border: `1px solid ${section.color}30`,
+                            fontSize: '0.6rem',
+                          }} />
+                        </ListItem>
+                      ))}
+                      <Divider sx={{ borderColor: '#2a2d3e' }} />
                     </Box>
-                    {results.teams.map(t => (
-                      <ListItem key={t.id} onClick={() => handleSelect('team', t.id)}
-                        sx={{ cursor: 'pointer', py: 1, '&:hover': { bgcolor: '#252736' } }}>
-                        <Avatar sx={{ width: 28, height: 28, bgcolor: 'rgba(107,203,119,0.2)', color: '#6BCB77', fontSize: 12, mr: 1.5 }}>
-                          {t.name[0]}
-                        </Avatar>
-                        <ListItemText
-                          primary={<Typography variant="body2" fontWeight={600}>{t.name}</Typography>}
-                          secondary={<Typography variant="caption" color="text.secondary">{t.department} · {t.location}</Typography>}
-                        />
-                        <Chip label="Team" size="small" sx={{ bgcolor: 'rgba(107,203,119,0.12)', color: '#6BCB77', fontSize: '0.65rem' }} />
-                      </ListItem>
-                    ))}
-                  </>
-                )}
-
-                {results.members?.length > 0 && (
-                  <>
-                    <Divider sx={{ borderColor: '#2a2d3e' }} />
-                    <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
-                      <Typography variant="caption" sx={{ color: '#8b8fa8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                        Members ({results.counts.members})
-                      </Typography>
-                    </Box>
-                    {results.members.map(m => (
-                      <ListItem key={m.id} onClick={() => handleSelect('member', m.id)}
-                        sx={{ cursor: 'pointer', py: 1, '&:hover': { bgcolor: '#252736' } }}>
-                        <Avatar sx={{ width: 28, height: 28, bgcolor: 'rgba(78,205,196,0.2)', color: '#4ECDC4', fontSize: 12, mr: 1.5 }}>
-                          {m.name[0]}
-                        </Avatar>
-                        <ListItemText
-                          primary={<Typography variant="body2" fontWeight={600}>{m.name}</Typography>}
-                          secondary={<Typography variant="caption" color="text.secondary">{m.role} · {m.location}</Typography>}
-                        />
-                        <Chip label="Member" size="small" sx={{ bgcolor: 'rgba(78,205,196,0.12)', color: '#4ECDC4', fontSize: '0.65rem' }} />
-                      </ListItem>
-                    ))}
-                  </>
-                )}
-
-                {results.projects?.length > 0 && (
-                  <>
-                    <Divider sx={{ borderColor: '#2a2d3e' }} />
-                    <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
-                      <Typography variant="caption" sx={{ color: '#8b8fa8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                        Projects ({results.counts.projects})
-                      </Typography>
-                    </Box>
-                    {results.projects.map(p => (
-                      <ListItem key={p.id} onClick={() => handleSelect('project', p.id)}
-                        sx={{ cursor: 'pointer', py: 1, '&:hover': { bgcolor: '#252736' } }}>
-                        <Avatar sx={{ width: 28, height: 28, bgcolor: 'rgba(162,155,254,0.2)', color: '#A29BFE', fontSize: 12, mr: 1.5 }}>
-                          {p.name?.[0] || 'P'}
-                        </Avatar>
-                        <ListItemText
-                          primary={<Typography variant="body2" fontWeight={600}>{p.name}</Typography>}
-                          secondary={<Typography variant="caption" color="text.secondary">{p.owner_name || 'No owner'}</Typography>}
-                        />
-                        <Chip label="Project" size="small" sx={{ bgcolor: 'rgba(162,155,254,0.12)', color: '#A29BFE', fontSize: '0.65rem' }} />
-                      </ListItem>
-                    ))}
-                  </>
-                )}
-
-                {results.achievements?.length > 0 && (
-                  <>
-                    <Divider sx={{ borderColor: '#2a2d3e' }} />
-                    <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
-                      <Typography variant="caption" sx={{ color: '#8b8fa8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                        Achievements ({results.counts.achievements})
-                      </Typography>
-                    </Box>
-                    {results.achievements.map(a => (
-                      <ListItem key={a.id} onClick={() => handleSelect('achievement', a.id)}
-                        sx={{ cursor: 'pointer', py: 1, '&:hover': { bgcolor: '#252736' } }}>
-                        <Avatar sx={{ width: 28, height: 28, bgcolor: 'rgba(255,209,102,0.2)', color: '#FFD166', fontSize: 12, mr: 1.5 }}>
-                          🏆
-                        </Avatar>
-                        <ListItemText
-                          primary={<Typography variant="body2" fontWeight={600}>{a.title}</Typography>}
-                          secondary={<Typography variant="caption" color="text.secondary">{a.impact}</Typography>}
-                        />
-                        <Chip label="Achievement" size="small" sx={{ bgcolor: 'rgba(255,209,102,0.12)', color: '#FFD166', fontSize: '0.65rem' }} />
-                      </ListItem>
-                    ))}
-                  </>
-                )}
-
-                <Box sx={{ px: 2, py: 1, borderTop: '1px solid #2a2d3e' }}>
+                  )
+                })}
+                <Box sx={{ px: 2, py: 1 }}>
                   <Typography variant="caption" color="text.secondary">
-                    {total} result{total !== 1 ? 's' : ''} for "{q}"
+                    {results.total} result{results.total !== 1 ? 's' : ''} for "{q}"
                   </Typography>
                 </Box>
               </>
@@ -223,113 +202,194 @@ function GlobalSearch() {
 
 export default function Layout() {
   const { user, signOut, isAdmin } = useAuth()
-  const navigate  = useNavigate()
-  const location  = useLocation()
-  const theme     = useTheme()
-  const isMobile  = useMediaQuery(theme.breakpoints.down('md'))
+  const navigate = useNavigate()
+  const location = useLocation()
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'))
+  const [anchorEl, setAnchorEl] = useState(null)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [anchorEl,   setAnchorEl]   = useState(null)
 
   const navItems = isAdmin
     ? [...NAV,
-        { label: 'Users', path: '/users', icon: <AdminPanelSettings /> },
-        { label: 'Audit', path: '/audit', icon: <Security /> },
-      ]
+      { label: 'Users', path: '/users', icon: <AdminPanelSettings sx={{ fontSize: 16 }} /> },
+      { label: 'Audit', path: '/audit', icon: <Security sx={{ fontSize: 16 }} /> },
+    ]
     : NAV
 
-  const isActive = path =>
+  const isActive = (path) => (
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)
-
-  const NavItem = ({ item }) => (
-    <Tooltip title={item.label} placement="right" arrow>
-      <Box
-        onClick={() => { navigate(item.path); setMobileOpen(false) }}
-        sx={{
-          width: 44, height: 44, borderRadius: 2.5,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', mb: 0.5,
-          color: isActive(item.path) ? '#13141a' : '#8b8fa8',
-          bgcolor: isActive(item.path) ? '#6BCB77' : 'transparent',
-          transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-          '&:hover': {
-            bgcolor: isActive(item.path) ? '#6BCB77' : '#252736',
-            color: isActive(item.path) ? '#13141a' : '#fff',
-            transform: 'scale(1.1)',
-          },
-          '&:active': { transform: 'scale(0.95)' },
-        }}
-      >
-        {item.icon}
-      </Box>
-    </Tooltip>
   )
 
-  const sidebar = (
-    <Box sx={{
-      width: isMobile ? 220 : SIDEBAR_W,
-      height: '100vh',
-      bgcolor: '#16171f',
-      borderRight: '1px solid #2a2d3e',
-      display: 'flex', flexDirection: 'column',
-      alignItems: isMobile ? 'flex-start' : 'center',
-      py: 2, px: isMobile ? 2 : 1.5,
-      position: 'fixed', top: 0, left: 0, zIndex: 100,
-    }}>
-      {/* Logo */}
+  return (
+    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
       <Box sx={{
-        width: 40, height: 40, borderRadius: 3,
-        background: 'linear-gradient(135deg, #6BCB77, #4ECDC4)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        mb: 3, flexShrink: 0, cursor: 'pointer',
-        transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-        '&:hover': { transform: 'scale(1.1) rotate(-5deg)' },
-      }} onClick={() => navigate('/')}>
-        <Groups sx={{ fontSize: 22, color: '#13141a' }} />
+        position: 'sticky', top: 0, zIndex: 100,
+        bgcolor: 'rgba(19,20,26,0.92)',
+        backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid #2a2d3e',
+        px: { xs: 2, md: 4 },
+        py: 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 2,
+        height: 52,
+      }}>
+        <Box
+          onClick={() => navigate('/')}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 1,
+            cursor: 'pointer', flexShrink: 0,
+            transition: 'opacity 0.2s',
+            '&:hover': { opacity: 0.8 },
+          }}
+        >
+          <Box sx={{
+            width: 28, height: 28, borderRadius: 2,
+            background: 'linear-gradient(135deg, #6BCB77, #4ECDC4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <Groups sx={{ fontSize: 16, color: '#13141a' }} />
+          </Box>
+          <Typography variant="body2" fontWeight={800}
+            sx={{ display: { xs: 'none', sm: 'block' }, letterSpacing: '-0.01em' }}>
+            ACME
+          </Typography>
+        </Box>
+
+        <Divider orientation="vertical" flexItem sx={{ borderColor: '#2a2d3e', my: 1 }} />
+
+        {!isMobile && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {navItems.map((item) => (
+              <Box
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                sx={{
+                  position: 'relative',
+                  display: 'flex', alignItems: 'center', gap: 0.8,
+                  px: 1.5, py: 0.8, borderRadius: 2,
+                  cursor: 'pointer',
+                  color: isActive(item.path) ? '#fff' : '#8b8fa8',
+                  bgcolor: isActive(item.path) ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  transition: 'all 0.15s ease',
+                  '&:hover': {
+                    bgcolor: 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                  },
+                }}
+              >
+                {item.icon}
+                <Typography variant="caption" fontWeight={isActive(item.path) ? 700 : 500}
+                  sx={{ fontSize: '0.8rem' }}>
+                  {item.label}
+                </Typography>
+                {isActive(item.path) && (
+                  <Box sx={{
+                    position: 'absolute',
+                    bottom: 0,
+                    width: '100%',
+                    height: 2,
+                    bgcolor: '#6BCB77',
+                    borderRadius: '2px 2px 0 0',
+                  }} />
+                )}
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        <Box sx={{ flexGrow: 1 }} />
+
+        <Box sx={{ width: '100%', maxWidth: 560, display: { xs: 'none', md: 'block' } }}>
+          <GlobalSearch />
+        </Box>
+
+        <Tooltip title={`${user?.full_name || user?.username} · ${user?.role}`}>
+          <Avatar
+            onClick={(e) => setAnchorEl(e.currentTarget)}
+            sx={{
+              width: 32, height: 32, cursor: 'pointer', flexShrink: 0,
+              bgcolor: user?.avatar_color || ROLE_COLORS[user?.role] || '#6BCB77',
+              fontSize: 13, fontWeight: 700, color: '#13141a',
+              border: `2px solid ${user?.avatar_color || ROLE_COLORS[user?.role] || '#6BCB77'}40`,
+              transition: 'all 0.2s cubic-bezier(0.34,1.56,0.64,1)',
+              '&:hover': { transform: 'scale(1.1)' },
+            }}
+          >
+            {(user?.username || 'U')[0].toUpperCase()}
+          </Avatar>
+        </Tooltip>
+
+        {isMobile && (
+          <IconButton onClick={() => setMobileOpen(true)}
+            sx={{ color: '#8b8fa8', flexShrink: 0 }}>
+            <MenuIcon />
+          </IconButton>
+        )}
       </Box>
 
-      {/* Nav */}
-      <Box sx={{ flexGrow: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'center' }}>
-        {navItems.map(item =>
-          isMobile ? (
-            <Box key={item.path} onClick={() => { navigate(item.path); setMobileOpen(false) }}
+      {!isMobile && (
+        <Box sx={{
+          height: 2,
+          bgcolor: '#13141a',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          {navItems.map((item) => isActive(item.path) && (
+            <Box key={item.path} sx={{
+              position: 'absolute', bottom: 0, height: 2,
+              bgcolor: '#6BCB77',
+              width: '100%',
+              opacity: 0.4,
+            }} />
+          ))}
+        </Box>
+      )}
+
+      <Drawer open={mobileOpen} onClose={() => setMobileOpen(false)}
+        PaperProps={{ sx: { bgcolor: '#16171f', border: 'none', width: 240 } }}>
+        <Box sx={{ p: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+            <Box sx={{
+              width: 32, height: 32, borderRadius: 2,
+              background: 'linear-gradient(135deg, #6BCB77, #4ECDC4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Groups sx={{ fontSize: 18, color: '#13141a' }} />
+            </Box>
+            <Typography fontWeight={800}>ACME Teams</Typography>
+          </Box>
+          <Box sx={{ mb: 2 }}>
+            <GlobalSearch />
+          </Box>
+          {navItems.map((item) => (
+            <Box key={item.path}
+              onClick={() => {
+                navigate(item.path)
+                setMobileOpen(false)
+              }}
               sx={{
                 display: 'flex', alignItems: 'center', gap: 1.5,
-                px: 1.5, py: 1.2, borderRadius: 2, mb: 0.5, width: '100%', cursor: 'pointer',
-                color: isActive(item.path) ? '#13141a' : '#8b8fa8',
-                bgcolor: isActive(item.path) ? '#6BCB77' : 'transparent',
-                transition: 'all 0.2s ease',
-                '&:hover': { bgcolor: isActive(item.path) ? '#6BCB77' : '#252736', color: isActive(item.path) ? '#13141a' : '#fff' },
+                px: 1.5, py: 1.2, borderRadius: 2, mb: 0.5, cursor: 'pointer',
+                color: isActive(item.path) ? '#fff' : '#8b8fa8',
+                bgcolor: isActive(item.path) ? 'rgba(107,203,119,0.15)' : 'transparent',
+                '&:hover': { bgcolor: '#252736', color: '#fff' },
               }}>
               {item.icon}
               <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
             </Box>
-          ) : (
-            <NavItem key={item.path} item={item} />
-          )
-        )}
-      </Box>
+          ))}
+        </Box>
+      </Drawer>
 
-      <Divider sx={{ borderColor: '#2a2d3e', width: '100%', mb: 2 }} />
-
-      {/* User avatar */}
-      <Tooltip title={`${user?.username} · ${user?.role}`} placement="right">
-        <Avatar
-          onClick={e => setAnchorEl(e.currentTarget)}
-          sx={{
-            width: 38, height: 38, cursor: 'pointer',
-            bgcolor: ROLE_COLORS[user?.role] || '#6BCB77',
-            fontSize: 15, fontWeight: 700, color: '#13141a',
-            border: `2px solid ${ROLE_COLORS[user?.role] || '#6BCB77'}40`,
-            transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            '&:hover': { transform: 'scale(1.1)', boxShadow: `0 0 0 4px ${ROLE_COLORS[user?.role] || '#6BCB77'}20` },
-          }}
-        >
-          {(user?.username || 'U')[0].toUpperCase()}
-        </Avatar>
-      </Tooltip>
-
-      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}
-        PaperProps={{ sx: { bgcolor: '#1e2029', border: '1px solid #2a2d3e', borderRadius: 3, minWidth: 200 } }}>
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)}
+        onClose={() => setAnchorEl(null)}
+        PaperProps={{ sx: {
+          bgcolor: '#1e2029', border: '1px solid #2a2d3e',
+          borderRadius: 3, minWidth: 220,
+          boxShadow: '0 16px 48px rgba(0,0,0,0.4)',
+        } }}>
         <Box sx={{ px: 2, py: 1.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
             <Avatar sx={{
@@ -353,77 +413,35 @@ export default function Layout() {
               {user.department}{user.location ? ` · ${user.location}` : ''}
             </Typography>
           )}
-          <Chip
-            label={user?.role}
-            size="small"
-            sx={{
-              mt: 0.5,
-              bgcolor: `${ROLE_COLORS[user?.role]}20`,
-              color: ROLE_COLORS[user?.role],
-              border: `1px solid ${ROLE_COLORS[user?.role]}40`,
-              fontSize: '0.7rem', fontWeight: 700,
-            }}
-          />
+          <Chip label={user?.role} size="small" sx={{
+            mt: 0.5,
+            bgcolor: `${ROLE_COLORS[user?.role]}20`,
+            color: ROLE_COLORS[user?.role],
+            border: `1px solid ${ROLE_COLORS[user?.role]}40`,
+            fontSize: '0.7rem', fontWeight: 700,
+          }} />
         </Box>
         <Divider sx={{ borderColor: '#2a2d3e' }} />
-        <MenuItem onClick={() => { setAnchorEl(null); signOut(); navigate('/login') }}
-          sx={{ gap: 1.5, color: '#FF6B6B', mt: 0.5, borderRadius: 2, mx: 1, mb: 0.5,
-            '&:hover': { bgcolor: 'rgba(255,107,107,0.1)' } }}>
+        <MenuItem
+          onClick={() => {
+            setAnchorEl(null)
+            signOut()
+            navigate('/login')
+          }}
+          sx={{
+            gap: 1.5, color: '#FF6B6B', mt: 0.5,
+            borderRadius: 2, mx: 1, mb: 0.5,
+            '&:hover': { bgcolor: 'rgba(255,107,107,0.1)' },
+          }}>
           <Logout fontSize="small" /> Sign out
         </MenuItem>
       </Menu>
-    </Box>
-  )
 
-  return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* Desktop sidebar */}
-      {!isMobile && sidebar}
-
-      {/* Mobile drawer */}
-      <Drawer open={mobileOpen} onClose={() => setMobileOpen(false)}
-        PaperProps={{ sx: { bgcolor: 'transparent', border: 'none' } }}>
-        {sidebar}
-      </Drawer>
-
-      {/* Main area */}
-      <Box sx={{
-        flexGrow: 1,
-        ml: isMobile ? 0 : `${SIDEBAR_W}px`,
-        display: 'flex', flexDirection: 'column', minHeight: '100vh',
+      <Box component="main" sx={{
+        maxWidth: 1400, mx: 'auto',
+        px: { xs: 2, md: 4 }, py: 3,
       }}>
-        {/* Top bar with search */}
-        <Box sx={{
-          position: 'sticky', top: 0, zIndex: 50,
-          bgcolor: 'rgba(19,20,26,0.85)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid #2a2d3e',
-          px: { xs: 2, md: 3 }, py: 1.5,
-          display: 'flex', alignItems: 'center', gap: 2,
-        }}>
-          {isMobile && (
-            <IconButton onClick={() => setMobileOpen(true)} sx={{ color: '#8b8fa8' }}>
-              <MenuIcon />
-            </IconButton>
-          )}
-          <GlobalSearch />
-          <Avatar
-            onClick={e => setAnchorEl(e.currentTarget)}
-            sx={{
-              display: { xs: 'flex', md: 'none' },
-              width: 34, height: 34, cursor: 'pointer',
-              bgcolor: ROLE_COLORS[user?.role] || '#6BCB77',
-              fontSize: 13, fontWeight: 700, color: '#13141a',
-            }}
-          >
-            {(user?.username || 'U')[0].toUpperCase()}
-          </Avatar>
-        </Box>
-
-        {/* Page content */}
-        <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 3 } }}>
-          <Outlet />
-        </Box>
+        <Outlet />
       </Box>
     </Box>
   )
