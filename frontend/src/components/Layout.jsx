@@ -8,7 +8,7 @@ import {
 import {
   Dashboard, Groups, Person, EmojiEvents,
   AdminPanelSettings, Logout,
-  Timeline, Security, FolderOpen, Menu as MenuIcon,
+  Timeline, Security, FolderOpen, Menu as MenuIcon, Work,
 } from '@mui/icons-material'
 import { useAuth } from '../context/AuthContext'
 
@@ -19,12 +19,11 @@ const ROLE_COLORS = {
 }
 
 const NAV = [
-  { label: 'Dashboard', path: '/', icon: <Dashboard sx={{ fontSize: 16 }} /> },
-  { label: 'Projects', path: '/projects', icon: <FolderOpen sx={{ fontSize: 16 }} /> },
-  { label: 'Teams', path: '/teams', icon: <Groups sx={{ fontSize: 16 }} /> },
-  { label: 'Members', path: '/members', icon: <Person sx={{ fontSize: 16 }} /> },
+  { label: 'Dashboard',  path: '/',          icon: <Dashboard   sx={{ fontSize: 16 }} /> },
+  { label: 'Projects',   path: '/projects',  icon: <FolderOpen  sx={{ fontSize: 16 }} /> },
+  { label: 'Resources',  path: '/members',   icon: <Work        sx={{ fontSize: 16 }} /> },
   { label: 'Achievements', path: '/achievements', icon: <EmojiEvents sx={{ fontSize: 16 }} /> },
-  { label: 'Activity', path: '/activity', icon: <Timeline sx={{ fontSize: 16 }} /> },
+  { label: 'Activity',   path: '/activity',  icon: <Timeline    sx={{ fontSize: 16 }} /> },
 ]
 
 

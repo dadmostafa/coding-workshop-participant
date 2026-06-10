@@ -9,7 +9,7 @@ import {
 } from '@mui/material'
 import {
   Add, Edit, Delete, ViewKanban, TableRows,
-  CalendarToday, Person,
+  CalendarToday, Person, Download,
 } from '@mui/icons-material'
 import {
   getProjects, createProject, updateProject,
@@ -44,6 +44,46 @@ const EMPTY_FORM = {
   name: '', description: '', team_id: '', status: 'backlog',
   priority: 'medium', owner_id: '', owner_name: '',
   start_date: '', due_date: '', progress: 0, tags: '', members: [],
+}
+
+// ── CSV Export ────────────────────────────────────────────────────────────────
+function exportProjectsCSV(projects) {
+  const headers = [
+    'Name', 'Status', 'Priority', 'Owner',
+    'Start Date', 'Due Date', 'Progress %',
+    'Total Budget', 'Spent Budget', 'Budget %',
+    'Team Members', 'Deliverables Done',
+  ]
+  const rows = projects.map(p => {
+    const budgetPct = p.total_budget > 0
+      ? Math.round((p.spent_budget / p.total_budget) * 100) : 0
+    const deliverables = p.deliverables || []
+    const doneDels     = deliverables.filter(d => d.status === 'done').length
+    return [
+      p.name         || '',
+      p.status       || '',
+      p.priority     || '',
+      p.owner_name   || '',
+      p.start_date   || '',
+      p.due_date     || '',
+      p.progress     || 0,
+      p.total_budget || 0,
+      p.spent_budget || 0,
+      budgetPct,
+      (p.members || []).length,
+      `${doneDels}/${deliverables.length}`,
+    ]
+  })
+  const csv = [headers, ...rows]
+    .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `projects_${new Date().toISOString().split('T')[0]}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function PipelineCard({ project, onEdit, onDelete, canWrite, canDelete: canDel }) {
@@ -351,6 +391,18 @@ export default function ProjectsPage() {
             <ToggleButton value="kanban"><ViewKanban sx={{ fontSize: 18 }} /></ToggleButton>
             <ToggleButton value="list"><TableRows sx={{ fontSize: 18 }} /></ToggleButton>
           </ToggleButtonGroup>
+          <Button
+            variant="outlined" size="small"
+            startIcon={<Download sx={{ fontSize: 16 }} />}
+            onClick={() => exportProjectsCSV(projects)}
+            sx={{
+              color: '#8b8fa8', borderColor: '#2a2d3e',
+              borderRadius: 2,
+              '&:hover': { borderColor: '#6BCB77', color: '#6BCB77' },
+            }}
+          >
+            Export CSV
+          </Button>
           {canWrite && (
             <Button variant="contained" startIcon={<Add />} onClick={openCreate}
               sx={{ bgcolor: '#6BCB77', color: '#13141a', '&:hover': { bgcolor: '#5ab868' } }}>
