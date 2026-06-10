@@ -10,6 +10,7 @@ import {
 } from '@mui/icons-material'
 import { getStats } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { formatDateTime } from '../utils/time'
 
 const STAT_CARDS = [
   { key: 'total_teams',        label: 'Total Teams',          icon: Groups,       color: '#6BCB77', bg: 'rgba(107,203,119,0.12)' },
@@ -95,7 +96,7 @@ export default function DashboardPage() {
         </Box>
         {user?.last_login && (
           <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-            Last signed in {new Date(user.last_login).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            Last signed in {formatDateTime(user.last_login)}
           </Typography>
         )}
       </Box>

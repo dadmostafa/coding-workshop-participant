@@ -5,6 +5,7 @@ import {
   TextField, MenuItem,
 } from '@mui/material'
 import axios from 'axios'
+import { formatDateTime } from '../utils/time'
 
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
 const token = () => localStorage.getItem('acme_token')
@@ -102,7 +103,7 @@ export default function AuditPage() {
                 <TableRow key={e.id}>
                   <TableCell>
                     <Typography variant="caption" color="text.secondary">
-                      {e.timestamp ? new Date(e.timestamp).toLocaleString() : '—'}
+                      {formatDateTime(e.timestamp)}
                     </Typography>
                   </TableCell>
                   <TableCell>

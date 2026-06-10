@@ -6,6 +6,7 @@ import {
 } from '@mui/material'
 import { Refresh } from '@mui/icons-material'
 import axios from 'axios'
+import { timeAgo, formatTime } from '../utils/time'
 
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
 const token = () => localStorage.getItem('acme_token')
@@ -27,22 +28,6 @@ const RESOURCE_ICONS = {
   metadata:     '🏷️',
   users:        '⚙️',
   auth:         '🔐',
-}
-
-function timeAgo(isoString) {
-  if (!isoString) return ''
-  
-  // Ensure UTC parsing — append Z if not already present
-  const ts   = isoString.endsWith('Z') ? isoString : isoString + 'Z'
-  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000)
-  
-  // Handle clock skew or future timestamps
-  if (diff < 0)    return 'just now'
-  if (diff < 60)   return `${diff}s ago`
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400)return `${Math.floor(diff / 3600)}h ago`
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
-  return new Date(ts).toLocaleDateString()
 }
 
 export default function ActivityPage() {
@@ -193,7 +178,7 @@ export default function ActivityPage() {
 
                   {/* Time */}
                   <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                    {item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    {formatTime(item.timestamp)}
                   </Typography>
                 </Box>
                 {idx < feed.length - 1 && <Divider sx={{ borderColor: '#2a2d3e' }} />}
