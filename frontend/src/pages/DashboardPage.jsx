@@ -4,18 +4,19 @@ import axios from 'axios'
 import {
   Grid, Box, Typography, CircularProgress, Alert,
   Card, CardContent, Button, Chip, LinearProgress,
-  Avatar, AvatarGroup, Tooltip, Divider,
-  InputBase, Paper, List, ListItem, ListItemText,
-  ClickAwayListener, IconButton,
+  Avatar, Tooltip, Divider, InputBase, Paper,
+  ClickAwayListener, IconButton, List, ListItem, ListItemText,
 } from '@mui/material'
 import {
-  Groups, Person, EmojiEvents, LocationOff,
-  WorkOff, TrendingUp, AccountTree, Add,
-  Work, ArrowForward, Rocket,
-  Search, Close, Timeline,
+  Assignment, Warning, CheckCircle, Groups,
+  AttachMoney, Person, EmojiEvents, ArrowForward,
+  Add, Search, Close, TrendingUp, Error,
+  PauseCircle, Schedule,
 } from '@mui/icons-material'
-import { getStats, getPipeline, getProjects } from '../services/api'
-import { useAuth } from '../context/AuthContext'
+import {
+  getStats, getPipeline, getProjects, getResourceAllocation,
+} from '../services/api'
+import { useAuth }    from '../context/AuthContext'
 import { formatDate } from '../utils/time'
 
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
@@ -40,149 +41,114 @@ const PRIORITY_CONFIG = {
 const AVATAR_COLORS = ['#FF6B6B','#FFD166','#6BCB77','#4ECDC4','#A29BFE','#74B9FF']
 const getAvatarColor = name => AVATAR_COLORS[(name?.charCodeAt(0) || 0) % AVATAR_COLORS.length]
 
-// ── Clean Stat Card ───────────────────────────────────────────────────────────
-function StatCard({ label, value, icon: Icon, color, subtitle, onClick }) {
+const fmt = (amount) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD', maximumFractionDigits: 0
+  }).format(amount || 0)
+
+// ── Health Card ───────────────────────────────────────────────────────────────
+function HealthCard({ label, value, icon: Icon, color, subtitle, onClick, alert }) {
   return (
     <Card onClick={onClick} sx={{
       bgcolor: '#1e2029',
-      border: '1px solid #2a2d3e',
+      border: `1px solid ${alert ? color + '40' : '#2a2d3e'}`,
       height: '100%',
       cursor: onClick ? 'pointer' : 'default',
       transition: 'all 0.18s ease',
-      '&:hover': onClick ? {
-        borderColor: `${color}50`,
-        transform: 'translateY(-2px)',
-      } : {},
+      '&:hover': onClick ? { borderColor: `${color}60`, transform: 'translateY(-2px)' } : {},
     }}>
-      <CardContent sx={{
-        p: 2.5,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 1,
-        '&:last-child': { pb: 2.5 },
-      }}>
-        {/* Icon centered in a neutral circle */}
-        <Box sx={{
-          width: 36, height: 36,
-          borderRadius: 2,
-          bgcolor: '#252736',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <Icon sx={{ fontSize: 18, color }} />
-        </Box>
-
-        {/* Value */}
-        <Typography variant="h4" fontWeight={700}
-          sx={{ color, lineHeight: 1, letterSpacing: '-0.02em' }}>
-          {value ?? '—'}
-        </Typography>
-
-        {/* Label */}
-        <Box>
-          <Typography variant="body2" fontWeight={600} color="text.primary">
-            {label}
-          </Typography>
-          {subtitle && (
-            <Typography variant="caption" color="text.secondary">
-              {subtitle}
+      <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <Box>
+            <Typography variant="caption" sx={{
+              color: '#8b8fa8', fontWeight: 600,
+              textTransform: 'uppercase', letterSpacing: '0.08em',
+              fontSize: '0.68rem', display: 'block', mb: 0.5,
+            }}>
+              {label}
             </Typography>
+            <Typography variant="h4" fontWeight={800}
+              sx={{ color, lineHeight: 1, letterSpacing: '-0.02em' }}>
+              {value ?? '—'}
+            </Typography>
+            {subtitle && (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                {subtitle}
+              </Typography>
+            )}
+          </Box>
+          <Box sx={{
+            width: 38, height: 38, borderRadius: 2,
+            bgcolor: alert ? `${color}20` : '#252736',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Icon sx={{ fontSize: 20, color }} />
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Project Row ───────────────────────────────────────────────────────────────
+function ProjectRow({ project, navigate }) {
+  const status   = STATUS_CONFIG[project.status]    || STATUS_CONFIG.backlog
+  const priority = PRIORITY_CONFIG[project.priority] || PRIORITY_CONFIG.medium
+
+  return (
+    <Box onClick={() => navigate(`/projects/${project.id}`)} sx={{
+      display: 'flex', alignItems: 'center', gap: 2,
+      px: 2, py: 1.5, cursor: 'pointer', borderRadius: 2,
+      transition: 'background 0.15s ease',
+      '&:hover': { bgcolor: '#252736' },
+    }}>
+      {/* Status dot */}
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: status.color, flexShrink: 0 }} />
+
+      {/* Name + flags */}
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" fontWeight={600} noWrap>{project.name}</Typography>
+          {project.is_overdue && (
+            <Chip label="Overdue" size="small" sx={{
+              bgcolor: 'rgba(255,107,107,0.12)', color: '#FF6B6B',
+              border: '1px solid rgba(255,107,107,0.25)',
+              fontSize: '0.6rem', height: 18, fontWeight: 700,
+            }} />
+          )}
+          {project.is_at_risk && !project.is_overdue && (
+            <Chip label="At Risk" size="small" sx={{
+              bgcolor: 'rgba(255,159,67,0.12)', color: '#FF9F43',
+              border: '1px solid rgba(255,159,67,0.25)',
+              fontSize: '0.6rem', height: 18, fontWeight: 700,
+            }} />
           )}
         </Box>
-      </CardContent>
-    </Card>
-  )
-}
+        <Typography variant="caption" color="text.secondary">
+          {project.owner_name || ''}
+          {project.due_date ? ` · Due ${formatDate(project.due_date)}` : ''}
+        </Typography>
+      </Box>
 
-// ── Clean Quick Action Card ───────────────────────────────────────────────────
-function ActionCard({ icon: Icon, color, label, description, onClick }) {
-  return (
-    <Card onClick={onClick} sx={{
-      bgcolor: '#1e2029',
-      border: '1px solid #2a2d3e',
-      cursor: 'pointer',
-      transition: 'all 0.18s ease',
-      '&:hover': {
-        borderColor: `${color}50`,
-        transform: 'translateY(-2px)',
-      },
-    }}>
-      <CardContent sx={{
-        p: 2,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 2,
-        '&:last-child': { pb: 2 },
-      }}>
-        {/* Icon */}
-        <Box sx={{
-          width: 40, height: 40,
-          borderRadius: 2,
-          bgcolor: '#252736',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <Icon sx={{ fontSize: 20, color }} />
-        </Box>
-
-        {/* Text */}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="body2" fontWeight={700}>
-            {label}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" noWrap>
-            {description}
-          </Typography>
-        </Box>
-
-        {/* Arrow */}
-        <ArrowForward sx={{ fontSize: 16, color: '#8b8fa8', flexShrink: 0 }} />
-      </CardContent>
-    </Card>
-  )
-}
-
-// ── Section Header ────────────────────────────────────────────────────────────
-function SectionHeader({ title, action }) {
-  return (
-    <Box sx={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      mb: 2,
-    }}>
-      <Typography variant="body1" fontWeight={700} color="text.primary">
-        {title}
+      {/* Priority */}
+      <Typography variant="caption" sx={{ color: priority.color, fontWeight: 700, flexShrink: 0 }}>
+        {priority.icon}
       </Typography>
-      {action}
+
+      {/* Progress */}
+      <Box sx={{ width: 80, flexShrink: 0 }}>
+        <LinearProgress variant="determinate" value={project.progress || 0}
+          sx={{ height: 4, borderRadius: 2, bgcolor: '#252736',
+            '& .MuiLinearProgress-bar': { bgcolor: status.color, borderRadius: 2 } }} />
+      </Box>
+      <Typography variant="caption" sx={{ color: status.color, fontWeight: 700, width: 32, flexShrink: 0 }}>
+        {project.progress || 0}%
+      </Typography>
     </Box>
   )
 }
 
-// ── Divider Label ─────────────────────────────────────────────────────────────
-function DividerLabel({ label }) {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, my: 3 }}>
-      <Box sx={{ flex: 1, height: 1, bgcolor: '#2a2d3e' }} />
-      <Typography variant="caption" sx={{
-        color: '#8b8fa8',
-        fontWeight: 600,
-        letterSpacing: '0.1em',
-        textTransform: 'uppercase',
-        fontSize: '0.7rem',
-      }}>
-        {label}
-      </Typography>
-      <Box sx={{ flex: 1, height: 1, bgcolor: '#2a2d3e' }} />
-    </Box>
-  )
-}
-
-// ── Inline Search ─────────────────────────────────────────────────────────────
+// ── Search Bar ────────────────────────────────────────────────────────────────
 function DashboardSearch() {
   const navigate  = useNavigate()
   const [q,       setQ]       = useState('')
@@ -200,12 +166,8 @@ function DashboardSearch() {
         { headers: { Authorization: `Bearer ${token}` } }
       )
       setResults(r.data)
-    } catch (err) {
-      console.error('Search failed:', err)
-      setResults(null)
-    } finally {
-      setLoading(false)
-    }
+    } catch { setResults(null) }
+    finally { setLoading(false) }
   }, [])
 
   const handleChange = (e) => {
@@ -217,16 +179,11 @@ function DashboardSearch() {
   }
 
   const handleClear = () => {
-    setQ('')
-    setResults(null)
-    setOpen(false)
+    setQ(''); setResults(null); setOpen(false)
     clearTimeout(window._searchTimer)
   }
 
-  const go = (path) => {
-    handleClear()
-    navigate(path)
-  }
+  const go = (path) => { handleClear(); navigate(path) }
 
   const SECTIONS = [
     { key: 'projects',     label: 'Projects',     color: '#A29BFE', nav: id => go(`/projects/${id}`) },
@@ -235,17 +192,12 @@ function DashboardSearch() {
     { key: 'achievements', label: 'Achievements', color: '#FFD166', nav: ()  => go('/achievements')  },
   ]
 
-  const hasResults = results && results.total > 0
-  const noResults  = results && results.total === 0
-
   return (
     <ClickAwayListener onClickAway={handleClear}>
-      <Box sx={{ position: 'relative', maxWidth: 560, mb: 4 }}>
-        {/* Input */}
+      <Box sx={{ position: 'relative', maxWidth: 580, mb: 4 }}>
         <Paper sx={{
           display: 'flex', alignItems: 'center', gap: 1.5,
-          px: 2.5, py: 1.3,
-          bgcolor: '#1e2029',
+          px: 2.5, py: 1.3, bgcolor: '#1e2029',
           border: '1px solid',
           borderColor: open && q ? '#6BCB77' : '#2a2d3e',
           borderRadius: 3,
@@ -257,15 +209,11 @@ function DashboardSearch() {
             : <Search sx={{ color: '#8b8fa8', fontSize: 18, flexShrink: 0 }} />
           }
           <InputBase
-            placeholder="Search teams, projects, members, achievements…"
-            value={q}
-            onChange={handleChange}
+            placeholder="Search projects, teams, members, achievements…"
+            value={q} onChange={handleChange}
             onFocus={() => q.length >= 2 && setOpen(true)}
-            sx={{
-              flex: 1,
-              fontSize: '0.9rem',
-              '& input::placeholder': { color: '#8b8fa8', opacity: 1 },
-            }}
+            sx={{ flex: 1, fontSize: '0.9rem',
+              '& input::placeholder': { color: '#8b8fa8', opacity: 1 } }}
           />
           {q && (
             <IconButton size="small" onClick={handleClear}
@@ -275,76 +223,47 @@ function DashboardSearch() {
           )}
         </Paper>
 
-        {/* Dropdown */}
         {open && q.length >= 2 && (
           <Paper sx={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            left: 0, right: 0,
-            bgcolor: '#1e2029',
-            border: '1px solid #2a2d3e',
-            borderRadius: 2.5,
-            zIndex: 9999,
+            position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
+            bgcolor: '#1e2029', border: '1px solid #2a2d3e',
+            borderRadius: 2.5, zIndex: 9999,
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-            maxHeight: 400,
-            overflow: 'auto',
+            maxHeight: 400, overflow: 'auto',
           }}>
-            {/* Loading state */}
             {loading && (
               <Box sx={{ p: 3, display: 'flex', justifyContent: 'center' }}>
                 <CircularProgress size={20} sx={{ color: '#6BCB77' }} />
               </Box>
             )}
-
-            {/* No results */}
-            {!loading && noResults && (
+            {!loading && results?.total === 0 && (
               <Box sx={{ p: 3, textAlign: 'center' }}>
-                <Typography variant="body2" color="text.secondary">
-                  No results for "{q}"
-                </Typography>
+                <Typography variant="body2" color="text.secondary">No results for "{q}"</Typography>
               </Box>
             )}
-
-            {/* Results */}
-            {!loading && hasResults && SECTIONS.map(section => {
+            {!loading && results?.total > 0 && SECTIONS.map(section => {
               const items = results[section.key] || []
               if (!items.length) return null
               return (
                 <Box key={section.key}>
-                  {/* Section label */}
                   <Typography variant="caption" sx={{
-                    display: 'block',
-                    px: 2, pt: 1.5, pb: 0.5,
-                    color: '#8b8fa8',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    fontSize: '0.65rem',
+                    display: 'block', px: 2, pt: 1.5, pb: 0.5,
+                    color: '#8b8fa8', fontWeight: 700,
+                    textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.65rem',
                   }}>
                     {section.label} · {items.length}
                   </Typography>
-
-                  {/* Items */}
                   {items.map(item => (
-                    <Box
-                      key={item.id}
-                      onClick={() => section.nav(item.id)}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1.5,
-                        px: 2, py: 1,
-                        cursor: 'pointer',
-                        transition: 'background 0.1s ease',
-                        '&:hover': { bgcolor: '#252736' },
-                      }}
-                    >
+                    <Box key={item.id} onClick={() => section.nav(item.id)} sx={{
+                      display: 'flex', alignItems: 'center', gap: 1.5,
+                      px: 2, py: 1, cursor: 'pointer',
+                      '&:hover': { bgcolor: '#252736' },
+                    }}>
                       <Avatar sx={{
                         width: 26, height: 26,
                         bgcolor: `${section.color}18`,
                         color: section.color,
-                        fontSize: 11, fontWeight: 700,
-                        flexShrink: 0,
+                        fontSize: 11, fontWeight: 700, flexShrink: 0,
                       }}>
                         {(item.name || item.title || '?')[0].toUpperCase()}
                       </Avatar>
@@ -357,11 +276,9 @@ function DashboardSearch() {
                         </Typography>
                       </Box>
                       <Chip label={section.label} size="small" sx={{
-                        bgcolor: `${section.color}12`,
-                        color: section.color,
+                        bgcolor: `${section.color}12`, color: section.color,
                         border: `1px solid ${section.color}25`,
-                        fontSize: '0.6rem', height: 18,
-                        flexShrink: 0,
+                        fontSize: '0.6rem', height: 18, flexShrink: 0,
                       }} />
                     </Box>
                   ))}
@@ -369,9 +286,7 @@ function DashboardSearch() {
                 </Box>
               )
             })}
-
-            {/* Footer */}
-            {!loading && hasResults && (
+            {!loading && results?.total > 0 && (
               <Box sx={{ px: 2, py: 1 }}>
                 <Typography variant="caption" color="text.secondary">
                   {results.total} result{results.total !== 1 ? 's' : ''} for "{q}"
@@ -390,35 +305,44 @@ export default function DashboardPage() {
   const { user, getGreeting, canWrite } = useAuth()
   const navigate = useNavigate()
 
-  const [stats,    setStats]    = useState(null)
-  const [pipeline, setPipeline] = useState(null)
-  const [projects, setProjects] = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState('')
+  const [stats,      setStats]      = useState(null)
+  const [pipeline,   setPipeline]   = useState(null)
+  const [projects,   setProjects]   = useState([])
+  const [allocation, setAllocation] = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState('')
 
   useEffect(() => {
     Promise.all([
       getStats(),
       getPipeline(),
-      getProjects({ status: 'in_progress' }),
+      getProjects(),
+      getResourceAllocation().catch(() => null),
     ])
-      .then(([s, p, pr]) => {
+      .then(([s, p, pr, alloc]) => {
         setStats(s)
         setPipeline(p)
-        setProjects(pr.slice(0, 6))
+        // Show at-risk and overdue first, then active, limit 8
+        const sorted = [...pr].sort((a, b) => {
+          const score = x => (x.is_overdue ? 3 : x.is_at_risk ? 2 : x.is_over_budget ? 1 : 0)
+          return score(b) - score(a)
+        })
+        setProjects(sorted.filter(p => !['completed','cancelled'].includes(p.status)).slice(0, 8))
+        setAllocation(alloc)
       })
       .catch(() => setError('Could not load dashboard'))
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) return (
-    <Box sx={{
-      display: 'flex', justifyContent: 'center',
-      alignItems: 'center', height: '60vh',
-    }}>
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
       <CircularProgress sx={{ color: '#6BCB77' }} />
     </Box>
   )
+
+  const budgetPct = stats?.total_budget > 0
+    ? Math.round((stats.spent_budget / stats.total_budget) * 100)
+    : 0
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
@@ -432,323 +356,296 @@ export default function DashboardPage() {
           {getGreeting()}
         </Typography>
         <Typography variant="body2" color="text.secondary" mt={0.5}>
-          {[user?.title, user?.department].filter(Boolean).join(' · ') || 'Welcome back'}
+          {[user?.title, user?.department].filter(Boolean).join(' · ') || 'Project Management Dashboard'}
         </Typography>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-      {/* ── Active Projects ─────────────────────────────────────────────── */}
-      <SectionHeader
-        title="Active Projects"
-        action={
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            {pipeline?.statuses?.in_progress?.count > 0 && (
-              <Chip
-                label={`${pipeline.statuses.in_progress.count} in progress`}
-                size="small"
-                sx={{
-                  bgcolor: 'rgba(255,209,102,0.1)',
-                  color: '#FFD166',
-                  border: '1px solid rgba(255,209,102,0.2)',
-                  fontWeight: 600,
-                  fontSize: '0.75rem',
-                }}
-              />
-            )}
-            {canWrite && (
-              <Button size="small" startIcon={<Add sx={{ fontSize: 16 }} />}
-                onClick={() => navigate('/projects')}
-                sx={{
-                  bgcolor: '#6BCB77', color: '#13141a',
-                  fontWeight: 700, fontSize: '0.8rem',
-                  px: 1.5, py: 0.6,
-                  '&:hover': { bgcolor: '#5ab868' },
-                }}>
-                New
-              </Button>
-            )}
-            <Button size="small" endIcon={<ArrowForward sx={{ fontSize: 14 }} />}
-              onClick={() => navigate('/projects')}
-              sx={{
-                color: '#8b8fa8', fontSize: '0.8rem',
-                border: '1px solid #2a2d3e', borderRadius: 2,
-                px: 1.5, py: 0.6,
-                '&:hover': { color: 'text.primary', borderColor: '#8b8fa8' },
-              }}>
-              All
-            </Button>
-          </Box>
-        }
-      />
+      {/* ── Business Question Cards ─────────────────────────────────────── */}
+      {/* Q1: Status  Q2: At Risk  Q3: Overdue  Q4: Budget  Q5: Over-allocated  Q6: Active */}
+      <Grid container spacing={2} sx={{ mb: 4 }}>
+        <Grid item xs={6} sm={4} md={2}>
+          <HealthCard
+            label="Active Projects"
+            value={stats?.active_projects}
+            icon={Assignment}
+            color="#6BCB77"
+            subtitle="Not completed"
+            onClick={() => navigate('/projects')}
+          />
+        </Grid>
+        <Grid item xs={6} sm={4} md={2}>
+          <HealthCard
+            label="At Risk"
+            value={stats?.at_risk_projects}
+            icon={Warning}
+            color="#FF9F43"
+            subtitle="Due in 14 days, <70%"
+            onClick={() => navigate('/projects')}
+            alert={stats?.at_risk_projects > 0}
+          />
+        </Grid>
+        <Grid item xs={6} sm={4} md={2}>
+          <HealthCard
+            label="Overdue"
+            value={stats?.overdue_projects}
+            icon={Error}
+            color="#FF6B6B"
+            subtitle="Past deadline"
+            onClick={() => navigate('/projects')}
+            alert={stats?.overdue_projects > 0}
+          />
+        </Grid>
+        <Grid item xs={6} sm={4} md={2}>
+          <HealthCard
+            label="Over Budget"
+            value={stats?.over_budget_count}
+            icon={AttachMoney}
+            color="#A29BFE"
+            subtitle=">80% budget used"
+            onClick={() => navigate('/projects')}
+            alert={stats?.over_budget_count > 0}
+          />
+        </Grid>
+        <Grid item xs={6} sm={4} md={2}>
+          <HealthCard
+            label="Over-Allocated"
+            value={stats?.over_allocated}
+            icon={Person}
+            color="#4ECDC4"
+            subtitle="Members on 2+ projects"
+            onClick={() => navigate('/members')}
+            alert={stats?.over_allocated > 0}
+          />
+        </Grid>
+        <Grid item xs={6} sm={4} md={2}>
+          <HealthCard
+            label="Total Projects"
+            value={stats?.total_projects}
+            icon={TrendingUp}
+            color="#74B9FF"
+            subtitle="All time"
+            onClick={() => navigate('/projects')}
+          />
+        </Grid>
+      </Grid>
 
-      {projects.length === 0 ? (
-        <Card sx={{
-          bgcolor: '#1e2029', border: '1px dashed #2a2d3e',
-          mb: 4,
-        }}>
-          <CardContent sx={{
-            py: 5,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 1.5,
-          }}>
-            <Rocket sx={{ fontSize: 40, color: '#2a2d3e' }} />
-            <Typography variant="body2" color="text.secondary">
-              No active projects
-            </Typography>
-            {canWrite && (
-              <Button size="small" startIcon={<Add />}
-                onClick={() => navigate('/projects')}
-                sx={{
-                  bgcolor: '#6BCB77', color: '#13141a',
-                  fontWeight: 700, mt: 0.5,
-                  '&:hover': { bgcolor: '#5ab868' },
-                }}>
-                Create First Project
-              </Button>
-            )}
+      {/* ── Budget Overview ──────────────────────────────────────────────── */}
+      {stats?.total_budget > 0 && (
+        <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e', mb: 3 }}>
+          <CardContent sx={{ p: 2.5 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+              <Typography variant="body2" fontWeight={700}>
+                Portfolio Budget
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Across all active projects
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary" display="block">Spent</Typography>
+                <Typography variant="h6" fontWeight={700}
+                  sx={{ color: budgetPct > 80 ? '#FF6B6B' : budgetPct > 60 ? '#FF9F43' : '#6BCB77' }}>
+                  {fmt(stats.spent_budget)}
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="caption" color="text.secondary" display="block">Utilization</Typography>
+                <Typography variant="h6" fontWeight={700}
+                  sx={{ color: budgetPct > 80 ? '#FF6B6B' : '#FFD166' }}>
+                  {budgetPct}%
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="caption" color="text.secondary" display="block">Total Budget</Typography>
+                <Typography variant="h6" fontWeight={700} color="text.primary">
+                  {fmt(stats.total_budget)}
+                </Typography>
+              </Box>
+            </Box>
+            <LinearProgress variant="determinate" value={Math.min(100, budgetPct)}
+              sx={{ height: 6, borderRadius: 3, bgcolor: '#252736',
+                '& .MuiLinearProgress-bar': {
+                  bgcolor: budgetPct > 80 ? '#FF6B6B' : budgetPct > 60 ? '#FF9F43' : '#6BCB77',
+                  borderRadius: 3,
+                }
+              }}
+            />
           </CardContent>
         </Card>
-      ) : (
-        <Grid container spacing={2} sx={{ mb: 4 }}>
-          {projects.map(p => {
-            const status   = STATUS_CONFIG[p.status]    || STATUS_CONFIG.backlog
-            const priority = PRIORITY_CONFIG[p.priority] || PRIORITY_CONFIG.medium
-            const isOverdue = p.due_date &&
-              new Date(p.due_date) < new Date() &&
-              !['completed', 'cancelled'].includes(p.status)
+      )}
 
-            return (
-              <Grid item xs={12} sm={6} md={4} key={p.id}>
-                <Card onClick={() => navigate(`/projects/${p.id}`)} sx={{
-                  bgcolor: '#1e2029',
-                  border: '1px solid #2a2d3e',
-                  cursor: 'pointer',
-                  height: '100%',
-                  transition: 'all 0.18s ease',
-                  '&:hover': {
-                    borderColor: `${status.color}50`,
-                    transform: 'translateY(-2px)',
-                  },
-                }}>
-                  <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-                    {/* Status + Priority */}
-                    <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
-                      <Chip label={status.label} size="small" sx={{
-                        bgcolor: `${status.color}15`,
-                        color: status.color,
-                        border: `1px solid ${status.color}25`,
-                        fontSize: '0.65rem', fontWeight: 600,
-                      }} />
-                      <Chip
-                        label={`${priority.icon} ${PRIORITY_CONFIG[p.priority]?.label || 'Medium'}`}
-                        size="small" sx={{
-                          bgcolor: '#252736',
-                          color: priority.color,
-                          border: '1px solid #2a2d3e',
-                          fontSize: '0.6rem',
-                        }}
-                      />
-                    </Box>
+      <Grid container spacing={3}>
 
-                    {/* Name */}
-                    <Typography variant="body1" fontWeight={700} mb={0.5} noWrap>
-                      {p.name}
-                    </Typography>
+        {/* ── Active Projects List ─────────────────────────────────────── */}
+        <Grid item xs={12} md={7}>
+          <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e' }}>
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 2, borderBottom: '1px solid #2a2d3e' }}>
+                <Typography variant="body1" fontWeight={700}>Active Projects</Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  {canWrite && (
+                    <Button size="small" startIcon={<Add sx={{ fontSize: 14 }} />}
+                      onClick={() => navigate('/projects')}
+                      sx={{ bgcolor: '#6BCB77', color: '#13141a', fontWeight: 700,
+                        fontSize: '0.75rem', px: 1.5, py: 0.5,
+                        '&:hover': { bgcolor: '#5ab868' } }}>
+                      New
+                    </Button>
+                  )}
+                  <Button size="small" endIcon={<ArrowForward sx={{ fontSize: 13 }} />}
+                    onClick={() => navigate('/projects')}
+                    sx={{ color: '#8b8fa8', fontSize: '0.75rem',
+                      border: '1px solid #2a2d3e', borderRadius: 2,
+                      '&:hover': { color: 'text.primary', borderColor: '#8b8fa8' } }}>
+                    All
+                  </Button>
+                </Box>
+              </Box>
 
-                    {p.description && (
-                      <Typography variant="caption" color="text.secondary"
-                        sx={{ display: 'block', mb: 1.5 }} noWrap>
-                        {p.description}
-                      </Typography>
-                    )}
-
-                    {/* Progress */}
-                    <Box sx={{ mb: 1.5 }}>
-                      <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        mb: 0.5,
-                      }}>
-                        <Typography variant="caption" color="text.secondary">
-                          Progress
-                        </Typography>
-                        <Typography variant="caption" fontWeight={700}
-                          sx={{ color: status.color }}>
-                          {p.progress || 0}%
-                        </Typography>
-                      </Box>
-                      <LinearProgress
-                        variant="determinate"
-                        value={p.progress || 0}
-                        sx={{
-                          height: 4, borderRadius: 2,
-                          bgcolor: '#252736',
-                          '& .MuiLinearProgress-bar': {
-                            bgcolor: status.color, borderRadius: 2,
-                          },
-                        }}
-                      />
-                    </Box>
-
-                    {/* Footer */}
-                    <Box sx={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}>
-                      <Typography variant="caption"
-                        sx={{ color: isOverdue ? '#FF6B6B' : '#8b8fa8', fontSize: '0.7rem' }}>
-                        {p.due_date
-                          ? `${isOverdue ? '⚠ ' : ''}Due ${formatDate(p.due_date)}`
-                          : p.owner_name || ''}
-                      </Typography>
-
-                      {p.members?.length > 0 && (
-                        <AvatarGroup max={3} sx={{
-                          '& .MuiAvatar-root': {
-                            width: 20, height: 20,
-                            fontSize: 9,
-                            border: '1px solid #1e2029',
-                          },
-                        }}>
-                          {p.members.map((m, i) => (
-                            <Tooltip key={i} title={m.member_name}>
-                              <Avatar sx={{
-                                bgcolor: getAvatarColor(m.member_name),
-                                color: '#13141a', fontWeight: 700,
-                              }}>
-                                {(m.member_name || '?')[0]}
-                              </Avatar>
-                            </Tooltip>
-                          ))}
-                        </AvatarGroup>
-                      )}
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            )
-          })}
+              {projects.length === 0 ? (
+                <Box sx={{ py: 5, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">No active projects</Typography>
+                  {canWrite && (
+                    <Button size="small" startIcon={<Add />} onClick={() => navigate('/projects')}
+                      sx={{ mt: 1.5, bgcolor: '#6BCB77', color: '#13141a',
+                        '&:hover': { bgcolor: '#5ab868' } }}>
+                      Create First Project
+                    </Button>
+                  )}
+                </Box>
+              ) : (
+                <Box sx={{ py: 0.5 }}>
+                  {projects.map(p => (
+                    <ProjectRow key={p.id} project={p} navigate={navigate} />
+                  ))}
+                </Box>
+              )}
+            </CardContent>
+          </Card>
         </Grid>
-      )}
 
-      {/* ── Pipeline Status ──────────────────────────────────────────────── */}
-      {pipeline && pipeline.total > 0 && (
-        <>
-          <SectionHeader title="Pipeline" />
-          <Grid container spacing={1.5} sx={{ mb: 1 }}>
-            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
-              const count = pipeline.statuses?.[key]?.count || 0
-              if (count === 0) return null
-              return (
-                <Grid item xs={6} sm={4} md={3} lg={2} key={key}>
-                  <Card onClick={() => navigate(`/projects?status=${key}`)} sx={{
-                    bgcolor: '#1e2029',
-                    border: '1px solid #2a2d3e',
-                    cursor: 'pointer',
-                    transition: 'all 0.18s ease',
-                    '&:hover': {
-                      borderColor: `${cfg.color}50`,
-                      transform: 'translateY(-2px)',
-                    },
-                  }}>
-                    <CardContent sx={{
-                      p: 2, '&:last-child': { pb: 2 },
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 0.5,
-                    }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                        <Box sx={{
-                          width: 7, height: 7,
-                          borderRadius: '50%',
-                          bgcolor: cfg.color,
-                          flexShrink: 0,
-                        }} />
-                        <Typography variant="caption" sx={{
-                          color: '#8b8fa8', fontWeight: 600,
-                          fontSize: '0.7rem',
-                        }}>
-                          {cfg.label}
-                        </Typography>
-                      </Box>
-                      <Typography variant="h5" fontWeight={800}
-                        sx={{ color: cfg.color, lineHeight: 1 }}>
-                        {count}
+        {/* ── Right column ─────────────────────────────────────────────── */}
+        <Grid item xs={12} md={5}>
+
+          {/* Pipeline breakdown */}
+          <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e', mb: 2 }}>
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ px: 2.5, py: 2, borderBottom: '1px solid #2a2d3e' }}>
+                <Typography variant="body1" fontWeight={700}>Pipeline</Typography>
+              </Box>
+              <Box sx={{ p: 1.5 }}>
+                {pipeline && Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+                  const count = pipeline.statuses?.[key]?.count || 0
+                  if (count === 0) return null
+                  return (
+                    <Box key={key} onClick={() => navigate(`/projects`)}
+                      sx={{ display: 'flex', alignItems: 'center', gap: 1.5,
+                        px: 1, py: 0.8, borderRadius: 2, cursor: 'pointer',
+                        '&:hover': { bgcolor: '#252736' } }}>
+                      <Box sx={{ width: 7, height: 7, borderRadius: '50%',
+                        bgcolor: cfg.color, flexShrink: 0 }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                        {cfg.label}
                       </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              )
-            })}
-          </Grid>
-        </>
-      )}
+                      <Chip label={count} size="small" sx={{
+                        bgcolor: `${cfg.color}12`, color: cfg.color,
+                        border: `1px solid ${cfg.color}25`,
+                        fontSize: '0.7rem', fontWeight: 700, height: 20,
+                      }} />
+                    </Box>
+                  )
+                })}
+              </Box>
+            </CardContent>
+          </Card>
 
-      {/* ── Quick Actions ────────────────────────────────────────────────── */}
-      <DividerLabel label="Quick Actions" />
+          {/* Over-allocated members */}
+          {allocation?.over_allocated?.length > 0 && (
+            <Card sx={{ bgcolor: '#1e2029', border: '1px solid rgba(255,107,107,0.3)', mb: 2 }}>
+              <CardContent sx={{ p: 0 }}>
+                <Box sx={{ px: 2.5, py: 2, borderBottom: '1px solid rgba(255,107,107,0.15)' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Warning sx={{ color: '#FF6B6B', fontSize: 18 }} />
+                    <Typography variant="body1" fontWeight={700} sx={{ color: '#FF6B6B' }}>
+                      Over-Allocated Members
+                    </Typography>
+                    <Chip label={allocation.over_allocated_count} size="small"
+                      sx={{ bgcolor: 'rgba(255,107,107,0.12)', color: '#FF6B6B',
+                        border: '1px solid rgba(255,107,107,0.25)', fontWeight: 700, height: 20 }} />
+                  </Box>
+                </Box>
+                <Box sx={{ p: 1.5 }}>
+                  {allocation.over_allocated.slice(0, 5).map(m => {
+                    const color = getAvatarColor(m.member_name)
+                    return (
+                      <Box key={m.member_id} sx={{
+                        display: 'flex', alignItems: 'center', gap: 1.5,
+                        px: 1, py: 0.8, borderRadius: 2,
+                      }}>
+                        <Avatar sx={{
+                          width: 28, height: 28, bgcolor: `${color}20`,
+                          color, fontSize: 11, fontWeight: 700, flexShrink: 0,
+                        }}>
+                          {(m.member_name || '?')[0].toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {m.member_name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {m.project_count} active projects · {m.total_days}d allocated
+                          </Typography>
+                        </Box>
+                        <Chip label={`${m.project_count} projects`} size="small"
+                          sx={{ bgcolor: 'rgba(255,107,107,0.1)', color: '#FF6B6B',
+                            border: '1px solid rgba(255,107,107,0.2)',
+                            fontSize: '0.6rem', height: 18 }} />
+                      </Box>
+                    )
+                  })}
+                </Box>
+              </CardContent>
+            </Card>
+          )}
 
-      <Grid container spacing={1.5} sx={{ mb: 1 }}>
-        {[
-          { icon: Groups,     color: '#6BCB77', label: 'Teams',        description: 'View and edit team structure',   path: '/teams'        },
-          { icon: Person,     color: '#4ECDC4', label: 'Members',      description: 'Add or update member info',      path: '/members'      },
-          { icon: EmojiEvents,color: '#FFD166', label: 'Achievements', description: 'Record monthly wins',            path: '/achievements' },
-          { icon: Timeline,   color: '#FF9F43', label: 'Activity',     description: 'See recent actions',             path: '/activity'     },
-        ].map(a => (
-          <Grid item xs={12} sm={6} md={3} key={a.path}>
-            <ActionCard {...a} onClick={() => navigate(a.path)} />
-          </Grid>
-        ))}
+          {/* Org quick stats */}
+          <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e' }}>
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ px: 2.5, py: 2, borderBottom: '1px solid #2a2d3e' }}>
+                <Typography variant="body1" fontWeight={700}>Organization</Typography>
+              </Box>
+              <Box sx={{ p: 1.5 }}>
+                {[
+                  { label: 'Teams',        value: stats?.total_teams,        color: '#6BCB77', path: '/teams',        icon: Groups  },
+                  { label: 'Members',      value: stats?.total_members,      color: '#4ECDC4', path: '/members',      icon: Person  },
+                  { label: 'Achievements', value: stats?.total_achievements, color: '#FFD166', path: '/achievements', icon: EmojiEvents },
+                ].map(item => (
+                  <Box key={item.label} onClick={() => navigate(item.path)} sx={{
+                    display: 'flex', alignItems: 'center', gap: 1.5,
+                    px: 1, py: 0.8, borderRadius: 2, cursor: 'pointer',
+                    '&:hover': { bgcolor: '#252736' },
+                  }}>
+                    <Box sx={{ width: 30, height: 30, borderRadius: 1.5,
+                      bgcolor: '#252736', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <item.icon sx={{ fontSize: 16, color: item.color }} />
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                      {item.label}
+                    </Typography>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: item.color }}>
+                      {item.value ?? '—'}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
       </Grid>
-
-      {/* ── Org Stats ───────────────────────────────────────────────────── */}
-      <DividerLabel label="Organization Stats" />
-
-      {/* Top counts */}
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        {[
-          { label: 'Teams',           value: stats?.total_teams,        icon: Groups,      color: '#6BCB77', path: '/teams'        },
-          { label: 'Members',         value: stats?.total_members,      icon: Person,      color: '#4ECDC4', path: '/members'      },
-          { label: 'Achievements',    value: stats?.total_achievements, icon: EmojiEvents, color: '#FFD166', path: '/achievements' },
-          { label: 'Total Projects',  value: stats?.total_projects,     icon: Work,        color: '#A29BFE', path: '/projects'     },
-          { label: 'Active Projects', value: stats?.active_projects,    icon: Rocket,      color: '#74B9FF', path: '/projects'     },
-        ].map(s => (
-          <Grid item xs={6} sm={4} md={2} key={s.label}>
-            <StatCard
-              label={s.label}
-              value={s.value}
-              icon={s.icon}
-              color={s.color}
-              onClick={() => navigate(s.path)}
-            />
-          </Grid>
-        ))}
-      </Grid>
-
-      {/* Insight stats */}
-      <Grid container spacing={2}>
-        {[
-          { label: 'Leader not co-located', value: stats?.leader_not_colocated, icon: LocationOff, color: '#FF6B6B', subtitle: 'Leader ≠ team location'    },
-          { label: 'Non-direct leader',     value: stats?.leader_non_direct,    icon: WorkOff,    color: '#FF9F43', subtitle: 'Leader is non-direct'       },
-          { label: 'High non-direct ratio', value: stats?.high_nondirect_ratio, icon: TrendingUp, color: '#A29BFE', subtitle: '>20% non-direct staff'      },
-          { label: 'Under org leader',      value: stats?.has_org_leader,       icon: AccountTree,color: '#74B9FF', subtitle: 'Reporting to org leader'    },
-        ].map(s => (
-          <Grid item xs={6} sm={6} md={3} key={s.label}>
-            <StatCard
-              label={s.label}
-              value={s.value}
-              icon={s.icon}
-              color={s.color}
-              subtitle={s.subtitle}
-            />
-          </Grid>
-        ))}
-      </Grid>
-
     </Box>
   )
 }
