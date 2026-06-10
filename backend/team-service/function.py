@@ -8,7 +8,7 @@ import logging
 import re
 from bson import ObjectId
 from bson.errors import InvalidId
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta, timedelta
 
 from mongo_service import get_db, reset_client, ensure_indexes
 from auth import (
@@ -1121,7 +1121,29 @@ def handle_projects(event, method, path_parts, db, user):
             ]
 
         docs = [to_doc(d) for d in col.find(active_filter(query)).sort([("updated_at", -1)])]
-        return resp(200, docs)
+
+        # Add risk flags to each project
+        today     = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        risk_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime('%Y-%m-%d')
+
+        processed = []
+        for d in docs:
+            due       = d.get("due_date", "")
+            progress  = d.get("progress", 0)
+            status    = d.get("status", "")
+            total_b   = d.get("total_budget", 0)
+            spent_b   = d.get("spent_budget", 0)
+
+            is_overdue   = due and due < today and status not in ["completed", "cancelled"]
+            is_at_risk   = due and today <= due <= risk_date and progress < 70 and status not in ["completed", "cancelled"]
+            is_over_budget = total_b > 0 and spent_b > 0 and (spent_b / total_b) > 0.8
+
+            d["is_overdue"]     = is_overdue
+            d["is_at_risk"]     = is_at_risk
+            d["is_over_budget"] = is_over_budget
+            processed.append(d)
+
+        return resp(200, processed)
 
     # ── Create project ────────────────────────────────────────────────────────
     if method == "POST" and not path_parts:
@@ -1558,66 +1580,211 @@ def handle_search(event, db, user):
 
 # ── Stats / dashboard aggregations ───────────────────────────────────────────
 
+def handle_resources(event, method, db, user):
+    """
+    GET /resources/allocation
+    Shows which members are allocated across multiple active projects.
+    Answers: "Which team members are over-allocated?"
+    """
+    if not can_read(user):
+        return auth_error()
+
+    filt        = {"deleted": {"$ne": True}}
+    active_filt = {**filt, "status": {"$nin": ["completed", "cancelled"]}}
+
+    # Get all active projects with their members
+    active_projects = list(db["projects"].find(active_filt, {
+        "name": 1, "status": 1, "members": 1, "due_date": 1, "priority": 1
+    }))
+
+    # Build member → projects map
+    member_map = {}
+    for proj in active_projects:
+        proj_id   = str(proj["_id"])
+        proj_name = proj.get("name", "")
+        for m in proj.get("members", []):
+            mid  = m.get("member_id", "")
+            name = m.get("member_name", "")
+            if not mid:
+                continue
+            if mid not in member_map:
+                member_map[mid] = {
+                    "member_id":   mid,
+                    "member_name": name,
+                    "projects":    [],
+                    "total_days":  0,
+                    "total_cost":  0,
+                }
+            member_map[mid]["projects"].append({
+                "project_id":   proj_id,
+                "project_name": proj_name,
+                "status":       proj.get("status", ""),
+                "due_date":     proj.get("due_date", ""),
+                "priority":     proj.get("priority", ""),
+                "role":         m.get("role", ""),
+                "days_allocated": m.get("days_allocated", 0),
+                "cost":         m.get("cost", 0),
+            })
+            member_map[mid]["total_days"] += m.get("days_allocated", 0)
+            member_map[mid]["total_cost"] += m.get("cost", 0)
+
+    # Tag over-allocated (2+ projects)
+    all_allocations = list(member_map.values())
+    for a in all_allocations:
+        a["project_count"]   = len(a["projects"])
+        a["is_over_allocated"] = len(a["projects"]) >= 2
+
+    # Sort by project count descending
+    all_allocations.sort(key=lambda x: x["project_count"], reverse=True)
+
+    over_allocated = [a for a in all_allocations if a["is_over_allocated"]]
+
+    return resp(200, {
+        "all_allocations":    all_allocations,
+        "over_allocated":     over_allocated,
+        "over_allocated_count": len(over_allocated),
+        "total_allocated":    len(all_allocations),
+    })
+
+
 def handle_stats(db, user):
     if not can_read(user):
         return auth_error()
 
-    filt = {"deleted": {"$ne": True}}
-    teams = list(db["teams"].find(filt))
-    members = list(db["members"].find(filt))
+    filt        = {"deleted": {"$ne": True}}
+    active_filt = {**filt, "status": {"$nin": ["completed", "cancelled"]}}
+    today       = datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
-    total_teams = len(teams)
-    total_members = len(members)
-
-    # Leader not co-located
-    leader_not_colocated = sum(
-        1 for t in teams
-        if t.get("team_leader") and t.get("location") and t.get("leader_location")
-        and t["location"].lower() != t["leader_location"].lower()
-    )
-
-    # Leader is non-direct staff
-    leader_non_direct = 0
-    for t in teams:
-        if t.get("team_leader"):
-            leader_member = next(
-                (m for m in members
-                 if m.get("team_id") == str(t["_id"]) and m.get("is_team_leader")),
-                None
-            )
-            if leader_member and leader_member.get("employment_type") == "non-direct":
-                leader_non_direct += 1
-
-    # Non-direct ratio > 20%
-    high_nondirect = 0
-    for t in teams:
-        team_members = [m for m in members if m.get("team_id") == str(t["_id"])]
-        if team_members:
-            non_direct = sum(1 for m in team_members if m.get("employment_type") == "non-direct")
-            if non_direct / len(team_members) > 0.2:
-                high_nondirect += 1
-
-    # Teams reporting to an org leader
-    has_org_leader = sum(1 for t in teams if t.get("org_leader"))
-
-    # Achievement count
+    # ── Basic counts ──────────────────────────────────────────────────────────
+    total_teams        = db["teams"].count_documents(filt)
+    total_members      = db["members"].count_documents(filt)
     total_achievements = db["achievements"].count_documents(filt)
-    total_projects = db["projects"].count_documents(filt)
-    active_projects = db["projects"].count_documents({
+    total_projects     = db["projects"].count_documents(filt)
+    active_projects    = db["projects"].count_documents(active_filt)
+
+    # ── Project health ────────────────────────────────────────────────────────
+
+    # Overdue — past due date, not completed/cancelled
+    overdue_projects = db["projects"].count_documents({
         **filt,
-        "status": {"$in": ["planning", "in_progress", "review"]},
+        "due_date": {"$lt": today, "$ne": ""},
+        "status":   {"$nin": ["completed", "cancelled"]},
+    })
+
+    # At risk — due within 14 days AND progress < 70%
+    risk_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime('%Y-%m-%d')
+    at_risk_projects = db["projects"].count_documents({
+        **filt,
+        "due_date": {"$gte": today, "$lte": risk_date},
+        "progress": {"$lt": 70},
+        "status":   {"$nin": ["completed", "cancelled"]},
+    })
+
+    # Budget health — projects where spent > 80% of budget
+    budget_pipeline = [
+        {"$match": {**filt, "total_budget": {"$gt": 0}}},
+        {"$project": {
+            "budget_pct": {
+                "$multiply": [
+                    {"$divide": [{"$ifNull": ["$spent_budget", 0]}, "$total_budget"]},
+                    100
+                ]
+            }
+        }},
+        {"$match": {"budget_pct": {"$gt": 80}}},
+        {"$count": "count"}
+    ]
+    budget_result = list(db["projects"].aggregate(budget_pipeline))
+    over_budget_projects = budget_result[0]["count"] if budget_result else 0
+
+    # Total budget across all projects
+    budget_totals = list(db["projects"].aggregate([
+        {"$match": filt},
+        {"$group": {
+            "_id":          None,
+            "total_budget": {"$sum": "$total_budget"},
+            "spent_budget": {"$sum": {"$ifNull": ["$spent_budget", 0]}},
+        }}
+    ]))
+    total_budget = budget_totals[0]["total_budget"] if budget_totals else 0
+    spent_budget = budget_totals[0]["spent_budget"] if budget_totals else 0
+
+    # ── Resource allocation ───────────────────────────────────────────────────
+
+    # Over-allocated — members appearing in 2+ active projects
+    active_project_list = list(db["projects"].find(
+        active_filt,
+        {"members": 1}
+    ))
+
+    member_project_count = {}
+    for proj in active_project_list:
+        for m in proj.get("members", []):
+            mid = m.get("member_id", "")
+            if mid:
+                member_project_count[mid] = member_project_count.get(mid, 0) + 1
+
+    over_allocated = sum(1 for count in member_project_count.values() if count >= 2)
+
+    # ── Team org stats ────────────────────────────────────────────────────────
+    leader_not_colocated = db["teams"].count_documents({
+        **filt,
+        "team_leader":     {"$exists": True, "$ne": ""},
+        "location":        {"$exists": True, "$ne": ""},
+        "leader_location": {"$exists": True, "$ne": ""},
+        "$expr": {"$ne": [
+            {"$toLower": "$location"},
+            {"$toLower": "$leader_location"},
+        ]}
+    })
+
+    leader_non_direct = db["members"].count_documents({
+        **filt,
+        "is_team_leader":  True,
+        "employment_type": "non-direct",
+    })
+
+    nondirect_pipeline = [
+        {"$match": filt},
+        {"$group": {
+            "_id":        "$team_id",
+            "total":      {"$sum": 1},
+            "non_direct": {"$sum": {
+                "$cond": [{"$eq": ["$employment_type", "non-direct"]}, 1, 0]
+            }}
+        }},
+        {"$match": {"$expr": {"$gt": [
+            {"$divide": ["$non_direct", "$total"]}, 0.2
+        ]}}},
+        {"$count": "count"}
+    ]
+    nondirect_result     = list(db["members"].aggregate(nondirect_pipeline))
+    high_nondirect_ratio = nondirect_result[0]["count"] if nondirect_result else 0
+
+    has_org_leader = db["teams"].count_documents({
+        **filt,
+        "org_leader": {"$exists": True, "$ne": ""}
     })
 
     return resp(200, {
-        "total_teams": total_teams,
-        "total_members": total_members,
-        "total_achievements": total_achievements,
-        "total_projects": total_projects,
-        "active_projects": active_projects,
-        "leader_not_colocated": leader_not_colocated,
-        "leader_non_direct": leader_non_direct,
-        "high_nondirect_ratio": high_nondirect,
-        "has_org_leader": has_org_leader,
+        # Project health — answers the 6 business questions
+        "total_projects":     total_projects,
+        "active_projects":    active_projects,
+        "overdue_projects":   overdue_projects,
+        "at_risk_projects":   at_risk_projects,
+        "over_budget_count":  over_budget_projects,
+        "over_allocated":     over_allocated,
+        "total_budget":       total_budget,
+        "spent_budget":       spent_budget,
+
+        # Org stats
+        "total_teams":           total_teams,
+        "total_members":         total_members,
+        "total_achievements":    total_achievements,
+        "leader_not_colocated":  leader_not_colocated,
+        "leader_non_direct":     leader_non_direct,
+        "high_nondirect_ratio":  high_nondirect_ratio,
+        "has_org_leader":        has_org_leader,
     })
 
 
@@ -1734,6 +1901,12 @@ def handler(event=None, context=None):
 
         if resource == "activity":
             return handle_activity(db, user)
+
+        if resource == "resources":
+            action = sub_parts[0] if sub_parts else ""
+            if action == "allocation":
+                return handle_resources(event, method, db, user)
+            return err(404, "Resource endpoint not found")
 
         if resource == "audit":
             return handle_audit(event, method, sub_parts, db, user)
