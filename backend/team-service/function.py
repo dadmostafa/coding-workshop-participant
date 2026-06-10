@@ -136,6 +136,26 @@ def log_audit(db, user: dict, action: str, resource: str, resource_id: str = Non
         logger.warning("Audit log failed: %s", e)
 
 
+# ── Progress Calculator ───────────────────────────────────────────────────────
+
+def _calc_progress(deliverables: list) -> int:
+    """
+    Auto-calculate project progress from deliverable completion.
+    done = 100%, in_progress = 50%, pending = 0%
+    Returns 0 if no deliverables.
+    """
+    if not deliverables:
+        return 0
+    total = len(deliverables)
+    score = sum(
+        100 if d.get("status") == "done" else
+        50  if d.get("status") == "in_progress" else
+        0
+        for d in deliverables
+    )
+    return round(score / total)
+
+
 # ── Audit Trail handler ───────────────────────────────────────────────────────
 
 def handle_audit(event, method, path_parts, db, user):
@@ -1139,22 +1159,30 @@ def handle_projects(event, method, path_parts, db, user):
 
         now = datetime.now(timezone.utc)
         doc = {
-            "name": body["name"].strip(),
-            "description": body.get("description", ""),
-            "team_id": body["team_id"],
-            "status": status,
-            "priority": priority,
-            "owner_id": body.get("owner_id", ""),
-            "owner_name": body.get("owner_name", ""),
-            "members": body.get("members", []),
-            "tags": body.get("tags", []),
-            "start_date": body.get("start_date", ""),
-            "due_date": body.get("due_date", ""),
-            "progress": int(body.get("progress", 0)),
-            "links": body.get("links", []),
-            "created_by": user.get("username", ""),
-            "created_at": now,
-            "updated_at": now,
+            "name":           body["name"].strip(),
+            "description":    body.get("description", ""),
+            "team_id":        body["team_id"],
+            "status":         status,
+            "priority":       priority,
+            "owner_id":       body.get("owner_id", ""),
+            "owner_name":     body.get("owner_name", ""),
+            "members":        [],   # populated via /projects/{id}/members
+            "tags":           body.get("tags", []),
+            "start_date":     body.get("start_date", ""),
+            "due_date":       body.get("due_date", ""),
+            "progress":       0,    # auto-calculated from deliverables
+            "links":          body.get("links", []),
+
+            # Budget fields
+            "total_budget":   float(body.get("total_budget", 0)),
+            "currency":       body.get("currency", "USD"),
+
+            # Deliverables checklist
+            "deliverables":   [],   # list of {id, title, status, created_at}
+
+            "created_by":     user.get("username", ""),
+            "created_at":     now,
+            "updated_at":     now,
         }
 
         result = col.insert_one(doc)
@@ -1252,30 +1280,40 @@ def handle_projects(event, method, path_parts, db, user):
         if member_id in existing_ids:
             return err(400, "Member already on this project")
 
+        # Cost tracking fields
+        daily_rate     = float(body.get("daily_rate", 0))
+        days_allocated = float(body.get("days_allocated", 0))
+        cost           = round(daily_rate * days_allocated, 2)
+
         new_member = {
-            "member_id": member_id,
-            "member_name": member.get("name", ""),
-            "role": body.get("role", "member"),
-            "added_at": datetime.now(timezone.utc).isoformat(),
-            "added_by": user.get("username", ""),
+            "member_id":      member_id,
+            "member_name":    member.get("name", ""),
+            "role":           body.get("role", "member"),
+            "member_type":    member.get("employment_type", "direct"),  # direct=employee, non-direct=contractor
+            "daily_rate":     daily_rate,
+            "days_allocated": days_allocated,
+            "cost":           cost,
+            "added_at":       datetime.now(timezone.utc).isoformat(),
+            "added_by":       user.get("username", ""),
         }
 
+        # Recalculate total spent
+        all_members  = project.get("members", []) + [new_member]
+        spent_budget = round(sum(m.get("cost", 0) for m in all_members), 2)
+
         col.update_one(
-            {"_id": ObjectId(pid), "deleted": {"$ne": True}},
+            {"_id": ObjectId(pid)},
             {
                 "$push": {"members": new_member},
-                "$set": {"updated_at": datetime.now(timezone.utc)},
-            },
+                "$set":  {
+                    "spent_budget": spent_budget,
+                    "updated_at":   datetime.now(timezone.utc),
+                },
+            }
         )
-        log_audit(
-            db,
-            user,
-            "UPDATE",
-            "projects",
-            pid,
-            details=f"Added {member.get('name')} to project",
-        )
-        return resp(200, {"message": f"{member.get('name')} added to project", "member": new_member})
+        log_audit(db, user, "UPDATE", "projects", pid,
+                  details=f"Added {member.get('name')} to project (cost: ${cost})")
+        return resp(200, {"message": f"{member.get('name')} added", "member": new_member, "spent_budget": spent_budget})
 
     # ── Remove member from project ────────────────────────────────────────────
     if method == "DELETE" and len(path_parts) >= 3 and path_parts[1] == "members":
@@ -1301,6 +1339,103 @@ def handle_projects(event, method, path_parts, db, user):
             details=f"Removed member {member_id} from project",
         )
         return resp(200, {"message": "Member removed from project"})
+
+    # ── Add deliverable item ─────────────────────────────────────────────────
+    if method == "POST" and len(path_parts) >= 2 and path_parts[1] == "deliverables":
+        if not can_write(user):
+            return permission_error("contributor")
+
+        body  = parse_body(event)
+        title = (body.get("title") or "").strip()
+        if not title:
+            return err(400, "Deliverable title is required")
+
+        project = col.find_one({"_id": ObjectId(pid)})
+        if not project:
+            return err(404, "Project not found")
+
+        import uuid
+        new_item = {
+            "id":         str(uuid.uuid4())[:8],
+            "title":      title,
+            "status":     "pending",   # pending / in_progress / done
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": user.get("username", ""),
+            "done_at":    None,
+            "done_by":    None,
+        }
+
+        updated_deliverables = project.get("deliverables", []) + [new_item]
+        progress = _calc_progress(updated_deliverables)
+
+        col.update_one(
+            {"_id": ObjectId(pid)},
+            {"$push": {"deliverables": new_item},
+             "$set":  {"progress": progress, "updated_at": datetime.now(timezone.utc)}}
+        )
+        log_audit(db, user, "UPDATE", "projects", pid, details=f"Added deliverable: {title}")
+        return resp(201, {"item": new_item, "progress": progress})
+
+    # ── Update deliverable item status ────────────────────────────────────────
+    if method == "PUT" and len(path_parts) >= 3 and path_parts[1] == "deliverables":
+        if not can_write(user):
+            return permission_error("contributor")
+
+        item_id = path_parts[2]
+        body    = parse_body(event)
+        new_status = body.get("status", "")
+
+        if new_status not in ["pending", "in_progress", "done"]:
+            return err(400, "status must be pending, in_progress, or done")
+
+        project = col.find_one({"_id": ObjectId(pid)})
+        if not project:
+            return err(404, "Project not found")
+
+        # Update the specific deliverable in the array
+        updated = []
+        found   = False
+        for item in project.get("deliverables", []):
+            if item["id"] == item_id:
+                item["status"]  = new_status
+                item["done_at"] = datetime.now(timezone.utc).isoformat() if new_status == "done" else None
+                item["done_by"] = user.get("username") if new_status == "done" else None
+                found = True
+            updated.append(item)
+
+        if not found:
+            return err(404, "Deliverable item not found")
+
+        progress = _calc_progress(updated)
+
+        col.update_one(
+            {"_id": ObjectId(pid)},
+            {"$set": {
+                "deliverables": updated,
+                "progress":     progress,
+                "updated_at":   datetime.now(timezone.utc),
+            }}
+        )
+        return resp(200, {"progress": progress, "deliverables": updated})
+
+    # ── Delete deliverable item ───────────────────────────────────────────────
+    if method == "DELETE" and len(path_parts) >= 3 and path_parts[1] == "deliverables":
+        if not can_write(user):
+            return permission_error("contributor")
+
+        item_id = path_parts[2]
+        project = col.find_one({"_id": ObjectId(pid)})
+        if not project:
+            return err(404, "Project not found")
+
+        updated  = [d for d in project.get("deliverables", []) if d["id"] != item_id]
+        progress = _calc_progress(updated)
+
+        col.update_one(
+            {"_id": ObjectId(pid)},
+            {"$set": {"deliverables": updated, "progress": progress, "updated_at": datetime.now(timezone.utc)}}
+        )
+        return resp(200, {"progress": progress, "deliverables": updated})
 
     return err(405, "Method not allowed")
 
