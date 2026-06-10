@@ -1,41 +1,6 @@
 """
-ACME Inc. Team Management – Lambda handler.
-
-Routes (all under /api/team-service):
-
-  POST   /auth/login                   public
-  POST   /auth/seed                    public (seeds default admin on first run)
-
-  GET    /users                        admin
-  POST   /users                        admin
-  PUT    /users/{id}                   admin
-  DELETE /users/{id}                   admin
-
-  GET    /teams                        viewer+
-  POST   /teams                        contributor+
-  GET    /teams/{id}                   viewer+
-  PUT    /teams/{id}                   contributor+
-  DELETE /teams/{id}                   manager+
-
-  GET    /members                      viewer+  (?team_id= filter)
-  POST   /members                      contributor+
-  GET    /members/{id}                 viewer+
-  PUT    /members/{id}                 contributor+
-  DELETE /members/{id}                 manager+
-
-  GET    /achievements                 viewer+  (?team_id= ?month= ?year= filter)
-  POST   /achievements                 contributor+
-  GET    /achievements/{id}            viewer+
-  PUT    /achievements/{id}            contributor+
-  DELETE /achievements/{id}            manager+
-
-  GET    /metadata                     viewer+  (?team_id= filter)
-  POST   /metadata                     contributor+
-  GET    /metadata/{id}                viewer+
-  PUT    /metadata/{id}                contributor+
-  DELETE /metadata/{id}                manager+
-
-  GET    /stats                        viewer+  (dashboard aggregations)
+ACME Inc. Team Management — Lambda handler.
+All routes handled in a single function following the workshop pattern.
 """
 
 import json
@@ -45,7 +10,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from datetime import datetime, timezone
 
-from mongo_service import get_db, reset_client
+from mongo_service import get_db, reset_client, ensure_indexes
 from auth import (
     get_current_user, create_token, create_access_token, create_refresh_token,
     hash_password, verify_password, revoke_token, refresh_access_token,
@@ -54,34 +19,40 @@ from auth import (
     can_manage_team, can_manage_members, can_manage_achievements,
     permission_error, auth_error, locked_error, get_role_info,
     is_account_locked, record_failed_attempt, clear_failed_attempts,
-    MAX_FAILED_ATTEMPTS, ACCESS_TOKEN_EXPIRY,
+    MAX_FAILED_ATTEMPTS, SENSITIVE_FIELDS, get_cors_origin,
 )
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+MAX_BODY_SIZE = 50_000
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def resp(status: int, body: dict) -> dict:
+def resp(status: int, body, event: dict = None) -> dict:
+    origin = get_cors_origin(event or {})
     return {
         "statusCode": status,
         "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+            "Content-Type":                 "application/json",
+            "Access-Control-Allow-Origin":  origin,
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Vary":                         "Origin",
         },
         "body": json.dumps(body, default=str),
     }
 
 
-def err(status: int, message: str) -> dict:
-    return resp(status, {"error": message})
+def err(status: int, message: str, event: dict = None) -> dict:
+    return resp(status, {"error": message}, event)
 
 
 def parse_body(event: dict) -> dict:
     raw = event.get("body") or "{}"
+    if len(str(raw)) > MAX_BODY_SIZE:
+        return {}
     if isinstance(raw, str):
         try:
             return json.loads(raw)
@@ -91,10 +62,12 @@ def parse_body(event: dict) -> dict:
 
 
 def to_doc(doc: dict) -> dict:
-    """Convert MongoDB document to JSON-serialisable dict."""
+    """Convert MongoDB document to safe JSON-serialisable dict."""
     if doc is None:
         return {}
     doc["id"] = str(doc.pop("_id"))
+    for field in SENSITIVE_FIELDS:
+        doc.pop(field, None)
     return doc
 
 
@@ -110,27 +83,30 @@ def qs(event: dict) -> dict:
     return event.get("queryStringParameters") or {}
 
 
-# ── Soft delete helpers ───────────────────────────────────────────────────────
-
-def soft_delete(col, oid: ObjectId, user: dict) -> bool:
-    """Mark a document as deleted instead of removing it."""
-    result = col.update_one(
-        {"_id": oid, "deleted": {"$ne": True}},
-        {"$set": {
-            "deleted":      True,
-            "deleted_at":   datetime.now(timezone.utc),
-            "deleted_by":   user.get("username", "unknown"),
-        }}
-    )
-    return result.modified_count > 0
+def escape_regex(s: str) -> str:
+    """Escape special regex chars to prevent injection."""
+    return re.escape(s)
 
 
 def active_filter(extra: dict = None) -> dict:
-    """Return a query filter that excludes soft-deleted documents."""
+    """Query filter that excludes soft-deleted documents."""
     q = {"deleted": {"$ne": True}}
     if extra:
         q.update(extra)
     return q
+
+
+def soft_delete(col, oid: ObjectId, user: dict) -> bool:
+    """Mark document as deleted — preserves data, enables recovery."""
+    result = col.update_one(
+        {"_id": oid, "deleted": {"$ne": True}},
+        {"$set": {
+            "deleted":    True,
+            "deleted_at": datetime.now(timezone.utc),
+            "deleted_by": user.get("username", "unknown"),
+        }}
+    )
+    return result.modified_count > 0
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
@@ -481,8 +457,19 @@ def handle_users(event, method, path_parts, db, user):
 
     col = db["users"]
 
-    if method == "GET" and len(path_parts) == 0:
-        docs = [to_doc(d) for d in col.find({}, {"password": 0})]
+    if method == "GET" and not path_parts:
+        q     = qs(event)
+        query = {}
+        if q.get("search"):
+            safe = escape_regex(q["search"])
+            query["$or"] = [
+                {"username":  {"$regex": safe, "$options": "i"}},
+                {"full_name": {"$regex": safe, "$options": "i"}},
+                {"email":     {"$regex": safe, "$options": "i"}},
+            ]
+        if q.get("role"):
+            query["role"] = q["role"]
+        docs = [to_doc(d) for d in col.find(query, {"password": 0}).sort([("username", 1)])]
         return resp(200, docs)
 
     if method == "POST":
@@ -491,46 +478,87 @@ def handle_users(event, method, path_parts, db, user):
             if not body.get(f):
                 return err(400, f"{f} is required")
         if body["role"] not in ["admin", "manager", "contributor", "viewer"]:
-            return err(400, "Invalid role")
-        if col.find_one({"username": body["username"]}):
+            return err(400, "role must be admin, manager, contributor or viewer")
+        if len(body["password"]) < 8:
+            return err(400, "Password must be at least 8 characters")
+        username = body["username"].strip().lower()
+        if col.find_one({"username": username}):
             return err(400, "Username already exists")
+        email = (body.get("email") or "").strip().lower()
+        if email and col.find_one({"email": email}):
+            return err(400, "Email already registered")
         doc = {
-            "username": body["username"],
-            "password": hash_password(body["password"]),
-            "role": body["role"],
-            "full_name": body.get("full_name", ""),
-            "email": body.get("email", ""),
-            "created_at": datetime.now(timezone.utc),
+            "username":     username,
+            "password":     hash_password(body["password"]),
+            "role":         body["role"],
+            "full_name":    body.get("full_name", ""),
+            "email":        email,
+            "avatar_color": body.get("avatar_color", "#6BCB77"),
+            "title":        body.get("title", ""),
+            "department":   body.get("department", ""),
+            "location":     body.get("location", ""),
+            "created_at":   datetime.now(timezone.utc),
+            "last_login":   None,
         }
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
-        doc.pop("_id", None)
-        doc.pop("password")
+        doc.pop("_id",  None)
+        doc.pop("password", None)
+        log_audit(db, user, "CREATE", "users", doc["id"], details=f"Created user {username}")
         return resp(201, doc)
 
     uid = path_parts[0] if path_parts else None
     if not uid or not valid_oid(uid):
         return err(400, "Invalid user id")
 
+    if method == "GET":
+        doc = col.find_one({"_id": ObjectId(uid)}, {"password": 0})
+        if not doc:
+            return err(404, "User not found")
+        return resp(200, to_doc(doc))
+
     if method == "PUT":
-        body = parse_body(event)
+        body   = parse_body(event)
         update = {}
-        for f in ["full_name", "email", "role"]:
+        for f in ["full_name", "email", "role", "title",
+                  "department", "location", "avatar_color"]:
             if f in body:
                 update[f] = body[f]
+        if "role" in update and update["role"] not in ["admin", "manager", "contributor", "viewer"]:
+            return err(400, "Invalid role")
+        if "email" in update:
+            update["email"] = update["email"].strip().lower()
         if "password" in body and body["password"]:
+            if len(body["password"]) < 8:
+                return err(400, "Password must be at least 8 characters")
             update["password"] = hash_password(body["password"])
         if not update:
             return err(400, "No fields to update")
-        result = col.update_one({"_id": ObjectId(uid)}, {"$set": update})
+        result = col.update_one(
+            {"_id": ObjectId(uid)},
+            {"$set": update}
+        )
         if result.matched_count == 0:
             return err(404, "User not found")
-        return resp(200, {"message": "Updated"})
+        doc = col.find_one({"_id": ObjectId(uid)}, {"password": 0})
+        log_audit(db, user, "UPDATE", "users", uid, changes={
+            k: v for k, v in update.items() if k != "password"
+        })
+        return resp(200, to_doc(doc))
 
     if method == "DELETE":
+        # Prevent deleting yourself
+        if uid == user.get("sub"):
+            return err(400, "You cannot delete your own account")
+        # Prevent deleting last admin
+        if col.count_documents({"role": "admin"}) <= 1:
+            target = col.find_one({"_id": ObjectId(uid)})
+            if target and target.get("role") == "admin":
+                return err(400, "Cannot delete the last admin account")
         result = col.delete_one({"_id": ObjectId(uid)})
         if result.deleted_count == 0:
             return err(404, "User not found")
+        log_audit(db, user, "DELETE", "users", uid)
         return resp(204, {})
 
     return err(405, "Method not allowed")
@@ -545,39 +573,44 @@ def handle_teams(event, method, path_parts, db, user):
     col = db["teams"]
 
     if method == "GET" and not path_parts:
-        q = qs(event)
+        q     = qs(event)
         query = {}
         if q.get("search"):
-            query["name"] = {"$regex": q["search"], "$options": "i"}
+            safe = escape_regex(q["search"])
+            query["$or"] = [
+                {"name":        {"$regex": safe, "$options": "i"}},
+                {"department":  {"$regex": safe, "$options": "i"}},
+                {"location":    {"$regex": safe, "$options": "i"}},
+                {"team_leader": {"$regex": safe, "$options": "i"}},
+            ]
         if q.get("location"):
-            query["location"] = {"$regex": q["location"], "$options": "i"}
-        docs = [to_doc(d) for d in col.find(active_filter(query)).sort("name", 1)]
+            query["location"] = {"$regex": escape_regex(q["location"]), "$options": "i"}
+        docs = [to_doc(d) for d in col.find(active_filter(query)).sort([("name", 1)])]
         return resp(200, docs)
 
     if method == "POST":
         if not can_write(user):
             return permission_error("contributor")
         body = parse_body(event)
-        for f in ["name"]:
-            if not (body.get(f) or "").strip():
-                return err(400, f"{f} is required")
-        if col.find_one({"name": body["name"]}):
+        if not (body.get("name") or "").strip():
+            return err(400, "name is required")
+        if col.find_one({"name": body["name"], "deleted": {"$ne": True}}):
             return err(400, "Team name already exists")
         doc = {
-            "name": body["name"].strip(),
-            "description": body.get("description", ""),
-            "location": body.get("location", ""),
-            "department": body.get("department", ""),
-            "team_leader": body.get("team_leader", ""),
+            "name":            body["name"].strip(),
+            "description":     body.get("description", ""),
+            "location":        body.get("location", ""),
+            "department":      body.get("department", ""),
+            "team_leader":     body.get("team_leader", ""),
             "leader_location": body.get("leader_location", ""),
-            "org_leader": body.get("org_leader", ""),
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "org_leader":      body.get("org_leader", ""),
+            "created_at":      datetime.now(timezone.utc),
+            "updated_at":      datetime.now(timezone.utc),
         }
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
         doc.pop("_id", None)
-        log_audit(db, user, "CREATE", "teams", str(result.inserted_id), details=doc["name"])
+        log_audit(db, user, "CREATE", "teams", doc["id"], details=doc["name"])
         return resp(201, doc)
 
     tid = path_parts[0] if path_parts else None
@@ -585,7 +618,7 @@ def handle_teams(event, method, path_parts, db, user):
         return err(400, "Invalid team id")
 
     if method == "GET":
-        doc = col.find_one({"_id": ObjectId(tid)})
+        doc = col.find_one({"_id": ObjectId(tid), "deleted": {"$ne": True}})
         if not doc:
             return err(404, "Team not found")
         return resp(200, to_doc(doc))
@@ -598,12 +631,17 @@ def handle_teams(event, method, path_parts, db, user):
             "name", "description", "location", "department",
             "team_leader", "leader_location", "org_leader"
         ] if k in body}
+        if not update:
+            return err(400, "No fields to update")
         update["updated_at"] = datetime.now(timezone.utc)
-        result = col.update_one({"_id": ObjectId(tid)}, {"$set": update})
+        result = col.update_one(
+            {"_id": ObjectId(tid), "deleted": {"$ne": True}},
+            {"$set": update}
+        )
         if result.matched_count == 0:
             return err(404, "Team not found")
-        log_audit(db, user, "UPDATE", "teams", tid, changes=update, details=body.get("name", ""))
         doc = col.find_one({"_id": ObjectId(tid)})
+        log_audit(db, user, "UPDATE", "teams", tid, changes=update)
         return resp(200, to_doc(doc))
 
     if method == "DELETE":
@@ -611,72 +649,81 @@ def handle_teams(event, method, path_parts, db, user):
             return permission_error("manager")
         deleted = soft_delete(col, ObjectId(tid), user)
         if not deleted:
-            return err(404, "Team not found")
-        log_audit(db, user, "DELETE", "teams", tid, details=f"Deleted team {tid}")
-        return resp(204, {})
+            filt = {"deleted": {"$ne": True}}
 
-    # Restore soft-deleted team — admin only
-    if method == "POST" and sub_parts and sub_parts[0] == "restore":
-        if not can_admin(user):
-            return permission_error("admin")
-        result = col.update_one(
-            {"_id": ObjectId(tid)},
-            {"$unset": {"deleted": "", "deleted_at": "", "deleted_by": ""}}
-        )
-        if result.modified_count == 0:
-            return err(404, "Team not found")
-        return resp(200, {"message": "Team restored"})
+            # Simple counts — no full collection load
+            total_teams        = db["teams"].count_documents(filt)
+            total_members      = db["members"].count_documents(filt)
+            total_achievements = db["achievements"].count_documents(filt)
 
-    return err(405, "Method not allowed")
+            # Leader not co-located — pure MongoDB comparison
+            leader_not_colocated = db["teams"].count_documents({
+                **filt,
+                "team_leader":     {"$exists": True, "$ne": ""},
+                "location":        {"$exists": True, "$ne": ""},
+                "leader_location": {"$exists": True, "$ne": ""},
+                "$expr": {"$ne": [
+                    {"$toLower": "$location"},
+                    {"$toLower": "$leader_location"},
+                ]}
+            })
 
+            # Teams where the leader is a non-direct member
+            leader_non_direct = db["members"].count_documents({
+                **filt,
+                "is_team_leader":  True,
+                "employment_type": "non-direct",
+            })
 
-# ── Members CRUD ──────────────────────────────────────────────────────────────
-
-def handle_members(event, method, path_parts, db, user):
-    if not can_read(user):
-        return auth_error()
-
-    col = db["members"]
-
-    if method == "GET" and not path_parts:
-        q = qs(event)
-        query = {}
-        if q.get("team_id") and valid_oid(q["team_id"]):
-            query["team_id"] = q["team_id"]
-        if q.get("search"):
-            query["$or"] = [
-                {"name": {"$regex": q["search"], "$options": "i"}},
-                {"email": {"$regex": q["search"], "$options": "i"}},
-                {"role": {"$regex": q["search"], "$options": "i"}},
+            # Teams with non-direct ratio > 20% — aggregation pipeline
+            pipeline = [
+                {"$match": filt},
+                {"$group": {
+                    "_id":        "$team_id",
+                    "total":      {"$sum": 1},
+                    "non_direct": {"$sum": {
+                        "$cond": [{"$eq": ["$employment_type", "non-direct"]}, 1, 0]
+                    }}
+                }},
+                {"$match": {
+                    "$expr": {
+                        "$gt": [
+                            {"$divide": ["$non_direct", "$total"]},
+                            0.2
+                        ]
+                    }
+                }},
+                {"$count": "count"}
             ]
-        docs = [to_doc(d) for d in col.find(active_filter(query)).sort("name", 1)]
-        return resp(200, docs)
+            high_nondirect_result = list(db["members"].aggregate(pipeline))
+            high_nondirect_ratio  = high_nondirect_result[0]["count"] if high_nondirect_result else 0
 
-    if method == "POST":
-        if not can_write(user):
-            return permission_error("contributor")
-        body = parse_body(event)
-        for f in ["name", "team_id"]:
-            if not (body.get(f) or "").strip():
-                return err(400, f"{f} is required")
+            # Teams reporting to an org leader
+            has_org_leader = db["teams"].count_documents({
+                **filt,
+                "org_leader": {"$exists": True, "$ne": ""}
+            })
         if not valid_oid(body["team_id"]):
             return err(400, "Invalid team_id")
+                "total_teams":          total_teams,
+                "total_members":        total_members,
+                "total_achievements":   total_achievements,
         doc = {
-            "name": body["name"].strip(),
-            "team_id": body["team_id"],
-            "email": body.get("email", ""),
-            "role": body.get("role", ""),
-            "location": body.get("location", ""),
-            "employment_type": body.get("employment_type", "direct"),  # direct | non-direct
-            "is_team_leader": bool(body.get("is_team_leader", False)),
-            "start_date": body.get("start_date", ""),
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+                "leader_non_direct":    leader_non_direct,
+            "team_id":         body["team_id"],
+                "has_org_leader":       has_org_leader,
+            "role":            body.get("role", ""),
+            "location":        body.get("location", ""),
+            "employment_type": body.get("employment_type", "direct"),
+            "is_team_leader":  bool(body.get("is_team_leader", False)),
+            "start_date":      body.get("start_date", ""),
+            "created_at":      datetime.now(timezone.utc),
+            "updated_at":      datetime.now(timezone.utc),
         }
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
         doc.pop("_id", None)
-        log_audit(db, user, "CREATE", "members", str(result.inserted_id), details=doc["name"])
+        log_audit(db, user, "CREATE", "members", doc["id"], details=doc["name"])
         return resp(201, doc)
 
     mid = path_parts[0] if path_parts else None
@@ -684,7 +731,7 @@ def handle_members(event, method, path_parts, db, user):
         return err(400, "Invalid member id")
 
     if method == "GET":
-        doc = col.find_one({"_id": ObjectId(mid)})
+        doc = col.find_one({"_id": ObjectId(mid), "deleted": {"$ne": True}})
         if not doc:
             return err(404, "Member not found")
         return resp(200, to_doc(doc))
@@ -692,17 +739,25 @@ def handle_members(event, method, path_parts, db, user):
     if method == "PUT":
         if not can_write(user):
             return permission_error("contributor")
-        body = parse_body(event)
+        body   = parse_body(event)
         update = {k: body[k] for k in [
             "name", "email", "role", "location",
-            "employment_type", "is_team_leader", "start_date", "team_id"
+            "employment_type", "is_team_leader",
+            "start_date", "team_id"
         ] if k in body}
+        if not update:
+            return err(400, "No fields to update")
+        if "email" in update:
+            update["email"] = update["email"].strip().lower()
         update["updated_at"] = datetime.now(timezone.utc)
-        result = col.update_one({"_id": ObjectId(mid)}, {"$set": update})
+        result = col.update_one(
+            {"_id": ObjectId(mid), "deleted": {"$ne": True}},
+            {"$set": update}
+        )
         if result.matched_count == 0:
             return err(404, "Member not found")
-        log_audit(db, user, "UPDATE", "members", mid, changes=update)
         doc = col.find_one({"_id": ObjectId(mid)})
+        log_audit(db, user, "UPDATE", "members", mid, changes=update)
         return resp(200, to_doc(doc))
 
     if method == "DELETE":
@@ -726,15 +781,32 @@ def handle_achievements(event, method, path_parts, db, user):
     col = db["achievements"]
 
     if method == "GET" and not path_parts:
-        q = qs(event)
+        q     = qs(event)
         query = {}
         if q.get("team_id") and valid_oid(q["team_id"]):
             query["team_id"] = q["team_id"]
         if q.get("month"):
-            query["month"] = int(q["month"])
+            try:
+                month = int(q["month"])
+                if 1 <= month <= 12:
+                    query["month"] = month
+            except ValueError:
+                return err(400, "month must be 1-12")
         if q.get("year"):
-            query["year"] = int(q["year"])
-        docs = [to_doc(d) for d in col.find(active_filter(query)).sort("year", -1)]
+            try:
+                year = int(q["year"])
+                if 2000 <= year <= 2100:
+                    query["year"] = year
+            except ValueError:
+                return err(400, "year must be a valid number")
+        if q.get("search"):
+            safe = escape_regex(q["search"])
+            query["$or"] = [
+                {"title":       {"$regex": safe, "$options": "i"}},
+                {"description": {"$regex": safe, "$options": "i"}},
+                {"impact":      {"$regex": safe, "$options": "i"}},
+            ]
+        docs = [to_doc(d) for d in col.find(active_filter(query)).sort([("year", -1), ("month", -1)])]
         return resp(200, docs)
 
     if method == "POST":
@@ -746,27 +818,30 @@ def handle_achievements(event, method, path_parts, db, user):
                 return err(400, f"{f} is required")
         if not valid_oid(body["team_id"]):
             return err(400, "Invalid team_id")
+        # Verify team exists and is not deleted
+        if not db["teams"].find_one({"_id": ObjectId(body["team_id"]), "deleted": {"$ne": True}}):
+            return err(404, "Team not found")
         try:
             month = int(body["month"])
-            year = int(body["year"])
+            year  = int(body["year"])
             assert 1 <= month <= 12
             assert 2000 <= year <= 2100
         except (ValueError, AssertionError):
-            return err(400, "month must be 1-12, year must be 2000-2100")
+            return err(400, "month must be 1-12 and year must be 2000-2100")
         doc = {
-            "title": body["title"].strip(),
-            "team_id": body["team_id"],
+            "title":       body["title"].strip(),
+            "team_id":     body["team_id"],
             "description": body.get("description", ""),
-            "month": month,
-            "year": year,
-            "impact": body.get("impact", ""),
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "month":       month,
+            "year":        year,
+            "impact":      body.get("impact", ""),
+            "created_at":  datetime.now(timezone.utc),
+            "updated_at":  datetime.now(timezone.utc),
         }
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
         doc.pop("_id", None)
-        log_audit(db, user, "CREATE", "achievements", str(result.inserted_id), details=doc["title"])
+        log_audit(db, user, "CREATE", "achievements", doc["id"], details=doc["title"])
         return resp(201, doc)
 
     aid = path_parts[0] if path_parts else None
@@ -774,7 +849,7 @@ def handle_achievements(event, method, path_parts, db, user):
         return err(400, "Invalid achievement id")
 
     if method == "GET":
-        doc = col.find_one({"_id": ObjectId(aid)})
+        doc = col.find_one({"_id": ObjectId(aid), "deleted": {"$ne": True}})
         if not doc:
             return err(404, "Achievement not found")
         return resp(200, to_doc(doc))
@@ -782,16 +857,34 @@ def handle_achievements(event, method, path_parts, db, user):
     if method == "PUT":
         if not can_write(user):
             return permission_error("contributor")
-        body = parse_body(event)
+        body   = parse_body(event)
         update = {k: body[k] for k in [
-            "title", "description", "month", "year", "impact", "team_id"
+            "title", "description", "month",
+            "year", "impact", "team_id"
         ] if k in body}
+        if not update:
+            return err(400, "No fields to update")
+        if "month" in update:
+            try:
+                update["month"] = int(update["month"])
+                assert 1 <= update["month"] <= 12
+            except (ValueError, AssertionError):
+                return err(400, "month must be 1-12")
+        if "year" in update:
+            try:
+                update["year"] = int(update["year"])
+                assert 2000 <= update["year"] <= 2100
+            except (ValueError, AssertionError):
+                return err(400, "year must be 2000-2100")
         update["updated_at"] = datetime.now(timezone.utc)
-        result = col.update_one({"_id": ObjectId(aid)}, {"$set": update})
+        result = col.update_one(
+            {"_id": ObjectId(aid), "deleted": {"$ne": True}},
+            {"$set": update}
+        )
         if result.matched_count == 0:
             return err(404, "Achievement not found")
-        log_audit(db, user, "UPDATE", "achievements", aid, changes=update)
         doc = col.find_one({"_id": ObjectId(aid)})
+        log_audit(db, user, "UPDATE", "achievements", aid, changes=update)
         return resp(200, to_doc(doc))
 
     if method == "DELETE":
@@ -815,11 +908,19 @@ def handle_metadata(event, method, path_parts, db, user):
     col = db["metadata"]
 
     if method == "GET" and not path_parts:
-        q = qs(event)
+        q     = qs(event)
         query = {}
         if q.get("team_id") and valid_oid(q["team_id"]):
             query["team_id"] = q["team_id"]
-        docs = [to_doc(d) for d in col.find(active_filter(query))]
+        if q.get("category"):
+            query["category"] = q["category"]
+        if q.get("search"):
+            safe = escape_regex(q["search"])
+            query["$or"] = [
+                {"key":   {"$regex": safe, "$options": "i"}},
+                {"value": {"$regex": safe, "$options": "i"}},
+            ]
+        docs = [to_doc(d) for d in col.find(active_filter(query)).sort([("key", 1)])]
         return resp(200, docs)
 
     if method == "POST":
@@ -831,17 +932,28 @@ def handle_metadata(event, method, path_parts, db, user):
                 return err(400, f"{f} is required")
         if not valid_oid(body["team_id"]):
             return err(400, "Invalid team_id")
-        doc = {
+        # Verify team exists and is not deleted
+        if not db["teams"].find_one({"_id": ObjectId(body["team_id"]), "deleted": {"$ne": True}}):
+            return err(404, "Team not found")
+        # Prevent duplicate keys per team
+        if col.find_one({
             "team_id": body["team_id"],
-            "key": body["key"].strip(),
-            "value": body["value"],
-            "category": body.get("category", "general"),
+            "key":     body["key"].strip(),
+            "deleted": {"$ne": True}
+        }):
+            return err(400, f"Key '{body['key']}' already exists for this team")
+        doc = {
+            "team_id":    body["team_id"],
+            "key":        body["key"].strip(),
+            "value":      body["value"],
+            "category":   body.get("category", "general"),
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
         }
         result = col.insert_one(doc)
         doc["id"] = str(result.inserted_id)
         doc.pop("_id", None)
+        log_audit(db, user, "CREATE", "metadata", doc["id"], details=f"{doc['key']}={doc['value']}")
         return resp(201, doc)
 
     mid = path_parts[0] if path_parts else None
@@ -849,7 +961,7 @@ def handle_metadata(event, method, path_parts, db, user):
         return err(400, "Invalid metadata id")
 
     if method == "GET":
-        doc = col.find_one({"_id": ObjectId(mid)})
+        doc = col.find_one({"_id": ObjectId(mid), "deleted": {"$ne": True}})
         if not doc:
             return err(404, "Metadata not found")
         return resp(200, to_doc(doc))
@@ -857,21 +969,32 @@ def handle_metadata(event, method, path_parts, db, user):
     if method == "PUT":
         if not can_write(user):
             return permission_error("contributor")
-        body = parse_body(event)
-        update = {k: body[k] for k in ["key", "value", "category", "team_id"] if k in body}
+        body   = parse_body(event)
+        update = {k: body[k] for k in [
+            "key", "value", "category", "team_id"
+        ] if k in body}
+        if not update:
+            return err(400, "No fields to update")
+        if "key" in update:
+            update["key"] = update["key"].strip()
         update["updated_at"] = datetime.now(timezone.utc)
-        result = col.update_one({"_id": ObjectId(mid)}, {"$set": update})
+        result = col.update_one(
+            {"_id": ObjectId(mid), "deleted": {"$ne": True}},
+            {"$set": update}
+        )
         if result.matched_count == 0:
             return err(404, "Metadata not found")
         doc = col.find_one({"_id": ObjectId(mid)})
+        log_audit(db, user, "UPDATE", "metadata", mid, changes=update)
         return resp(200, to_doc(doc))
 
     if method == "DELETE":
         if not can_delete(user):
             return permission_error("manager")
-        result = col.delete_one({"_id": ObjectId(mid)})
-        if result.deleted_count == 0:
+        deleted = soft_delete(col, ObjectId(mid), user)
+        if not deleted:
             return err(404, "Metadata not found")
+        log_audit(db, user, "DELETE", "metadata", mid)
         return resp(204, {})
 
     return err(405, "Method not allowed")
@@ -1083,51 +1206,45 @@ def handler(event=None, context=None):
     method = (event.get("requestContext", {}).get("http", {}).get("method")
               or event.get("httpMethod", "GET")).upper()
 
-    # Handle CORS preflight
+    # CORS preflight
     if method == "OPTIONS":
-        return resp(204, {})
+        return resp(204, {}, event)
+
+    # Request size guard
+    body_raw = event.get("body") or ""
+    if len(str(body_raw)) > MAX_BODY_SIZE:
+        return err(413, "Request body too large", event)
 
     raw_path = (event.get("requestContext", {}).get("http", {}).get("path")
                 or event.get("path", "/"))
 
-    # Strip prefix up to and including the service name
-    # e.g. /api/team-service/teams/123  or  /teams/123
-    path = re.sub(r"^(/[^/]+/team-service|/api/[^/]+)", "", raw_path).strip("/")
-    parts = [p for p in path.split("/") if p]
-
-    resource = parts[0] if parts else ""
+    path      = re.sub(r"^(/[^/]+/team-service|/api/[^/]+)", "", raw_path).strip("/")
+    parts     = [p for p in path.split("/") if p]
+    resource  = parts[0] if parts else ""
     sub_parts = parts[1:] if len(parts) > 1 else []
 
     try:
         db = get_db()
-        # Ensure default users exist on every cold start
+        ensure_indexes(db)
         seed_admin(db)
 
         user = get_current_user(event)
 
-        # Public routes
+        # ── Public routes ─────────────────────────────────────────────────────
         if resource == "auth":
-            action = sub_parts[0] if sub_parts else (parts[1] if len(parts) > 1 else "")
-            if not action and len(parts) > 1:
-                action = parts[1]
-            # parts = ["auth", "login"] → resource="auth", sub_parts=["login"]
             action = sub_parts[0] if sub_parts else ""
+
             if action == "login" and method == "POST":
                 return handle_login(event, db)
+
             if action == "register" and method == "POST":
                 return handle_register(event, db)
-            if action == "me" and method == "GET":
-                current_user = get_current_user(event)
-                if not current_user:
-                    return auth_error()
-                profile = db["users"].find_one({"_id": ObjectId(current_user["sub"])}, {"password": 0})
-                if not profile:
-                    return err(404, "User not found")
-                return resp(200, to_doc(profile))
+
             if action == "seed" and method == "POST":
                 return handle_seed(event, db)
+
             if action == "refresh" and method == "POST":
-                body = parse_body(event)
+                body        = parse_body(event)
                 refresh_tok = body.get("refresh_token", "")
                 if not refresh_tok:
                     return err(400, "refresh_token is required")
@@ -1135,14 +1252,45 @@ def handler(event=None, context=None):
                 if not result:
                     return err(401, "Invalid or expired refresh token")
                 return resp(200, result)
+
             if action == "logout" and method == "POST":
                 token = extract_token(event)
                 if token:
                     revoke_token(token)
+                log_audit(db, user, "LOGOUT", "auth",
+                          details=f"{user.get('username','unknown')} signed out" if user else "logout")
                 return resp(200, {"message": "Logged out successfully"})
-            return err(404, "Auth endpoint not found")
 
-        # Protected resources
+            if action == "me" and method == "GET":
+                if not user:
+                    return auth_error()
+                profile = db["users"].find_one(
+                    {"_id": ObjectId(user["sub"])},
+                    {"password": 0}
+                )
+                if not profile:
+                    return err(404, "User not found")
+                return resp(200, to_doc(profile))
+
+            return err(404, f"Auth endpoint '/{action}' not found")
+
+        # ── Public info routes ────────────────────────────────────────────────
+        if resource == "roles" and method == "GET":
+            roles = ["viewer", "contributor", "manager", "admin"]
+            return resp(200, {
+                "roles":       [get_role_info(r) for r in roles],
+                "description": "Roles in ascending order of privilege",
+            })
+
+        # Health check
+        if not resource:
+            return resp(200, {
+                "status":  "ok",
+                "service": "team-service",
+                "version": "2.0.0",
+            })
+
+        # ── Protected routes ──────────────────────────────────────────────────
         dispatch = {
             "users":        handle_users,
             "teams":        handle_teams,
@@ -1151,33 +1299,26 @@ def handler(event=None, context=None):
             "metadata":     handle_metadata,
         }
 
-        # Add notes routing — handle /teams/{id}/notes[/{nid}]
-        if resource == "teams" and len(parts) >= 3 and parts[2] == "notes":
-            team_id = parts[1]
-            note_parts = [team_id] + (parts[3:] if len(parts) > 3 else [])
-            return handle_notes(event, method, note_parts, db, user)
+        if resource == "stats":
+            return handle_stats(db, user)
 
         if resource == "search":
             return handle_search(event, db, user)
 
-        if resource == "stats":
-            return handle_stats(db, user)
-
-        if resource == "roles":
-            return handle_roles()
+        if resource == "activity":
+            return handle_activity(db, user)
 
         if resource == "audit":
             return handle_audit(event, method, sub_parts, db, user)
 
-        if resource == "activity":
-            return handle_activity(db, user)
+        # Team notes — /teams/{id}/notes
+        if resource == "teams" and len(parts) >= 3 and parts[2] == "notes":
+            team_id    = parts[1]
+            note_parts = [team_id] + (parts[3:] if len(parts) > 3 else [])
+            return handle_notes(event, method, note_parts, db, user)
 
         if resource in dispatch:
             return dispatch[resource](event, method, sub_parts, db, user)
-
-        # Root health check
-        if not resource:
-            return resp(200, {"status": "ok", "service": "team-service"})
 
         return err(404, f"Resource '{resource}' not found")
 
