@@ -1325,11 +1325,14 @@ def handle_projects(event, method, path_parts, db, user):
         days_allocated = float(body.get("days_allocated", 0))
         cost           = round(daily_rate * days_allocated, 2)
 
+        # Read from the canonical member record so project payload stays consistent.
+        employment_type = member.get("employment_type", "direct")
+
         new_member = {
             "member_id":      member_id,
             "member_name":    member.get("name", ""),
             "role":           body.get("role", "member"),
-            "member_type":    member.get("employment_type", "direct"),  # direct=employee, non-direct=contractor
+            "member_type":    employment_type,
             "daily_rate":     daily_rate,
             "days_allocated": days_allocated,
             "cost":           cost,
@@ -1352,7 +1355,7 @@ def handle_projects(event, method, path_parts, db, user):
             }
         )
         log_audit(db, user, "UPDATE", "projects", pid,
-                  details=f"Added {member.get('name')} to project (cost: ${cost})")
+                                    details=f"Added {member.get('name')} to project")
         return resp(200, {"message": f"{member.get('name')} added", "member": new_member, "spent_budget": spent_budget})
 
     # ── Remove member from project ────────────────────────────────────────────
@@ -1666,6 +1669,49 @@ def handle_resources(event, method, db, user):
     })
 
 
+def handle_admin_fix_members(db, user):
+    """Backfill missing project member cost/type fields for legacy seeded data."""
+    if not can_admin(user):
+        return permission_error("admin")
+
+    projects = list(db["projects"].find({"deleted": {"$ne": True}}))
+    fixed = 0
+
+    for proj in projects:
+        members = proj.get("members", [])
+        needs_update = False
+        updated = []
+
+        for m in members:
+            member_row = dict(m)
+            if "member_type" not in member_row or "daily_rate" not in member_row:
+                needs_update = True
+                try:
+                    member_doc = db["members"].find_one({"_id": ObjectId(member_row.get("member_id", ""))})
+                    if member_doc:
+                        member_row["member_type"] = member_doc.get("employment_type", "direct")
+                except Exception:
+                    # Keep current row values when the legacy member cannot be resolved.
+                    pass
+
+                member_row["daily_rate"] = member_row.get("daily_rate", 0)
+                member_row["days_allocated"] = member_row.get("days_allocated", 0)
+                member_row["cost"] = member_row.get("cost", 0)
+                member_row["added_at"] = member_row.get("added_at", datetime.now(timezone.utc).isoformat())
+                member_row["added_by"] = member_row.get("added_by", "system")
+
+            updated.append(member_row)
+
+        if needs_update:
+            db["projects"].update_one(
+                {"_id": proj["_id"]},
+                {"$set": {"members": updated}}
+            )
+            fixed += 1
+
+    return resp(200, {"message": f"Fixed {fixed} projects", "total": len(projects)})
+
+
 def handle_stats(db, user):
     if not can_read(user):
         return auth_error()
@@ -1926,6 +1972,12 @@ def handler(event=None, context=None):
             if action == "allocation":
                 return handle_resources(event, method, db, user)
             return err(404, "Resource endpoint not found")
+
+        if resource == "admin":
+            action = sub_parts[0] if sub_parts else ""
+            if action == "fix-members" and method == "POST":
+                return handle_admin_fix_members(db, user)
+            return err(404, "Admin endpoint not found")
 
         if resource == "audit":
             return handle_audit(event, method, sub_parts, db, user)

@@ -263,7 +263,6 @@ export default function ProjectDetailPage() {
   const deliverables  = project.deliverables || []
   const doneCount     = deliverables.filter(d => d.status === 'done').length
   const inProgCount   = deliverables.filter(d => d.status === 'in_progress').length
-  const pendingCount  = deliverables.filter(d => d.status === 'pending').length
 
   return (
     <Box>
@@ -343,58 +342,62 @@ export default function ProjectDetailPage() {
         )}
       </Grid>
 
-      <Grid container spacing={3}>
-        {/* ── Left column ──────────────────────────────────────────────── */}
-        <Grid item xs={12} md={7}>
+      {/* ── Main content — full width stacked ──────────────────────────── */}
+      <Grid container spacing={2.5}>
 
-          {/* Progress + Deliverables */}
+        {/* LEFT — Progress + Deliverables */}
+        <Grid item xs={12} md={6}>
+
+          {/* Progress card */}
           <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e', mb: 2.5 }}>
             <CardContent>
-              {/* Progress bar */}
-              <Box sx={{ mb: 2.5 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="body2" fontWeight={700}>Progress</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    {deliverables.length > 0 && (
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Chip label={`${doneCount} done`} size="small"
-                          sx={{ bgcolor: 'rgba(107,203,119,0.12)', color: '#6BCB77',
-                            border: '1px solid rgba(107,203,119,0.25)', fontSize: '0.65rem', height: 20 }} />
-                        {inProgCount > 0 && (
-                          <Chip label={`${inProgCount} in progress`} size="small"
-                            sx={{ bgcolor: 'rgba(255,209,102,0.12)', color: '#FFD166',
-                              border: '1px solid rgba(255,209,102,0.25)', fontSize: '0.65rem', height: 20 }} />
-                        )}
-                        {pendingCount > 0 && (
-                          <Chip label={`${pendingCount} pending`} size="small"
-                            sx={{ bgcolor: 'rgba(139,143,168,0.1)', color: '#8b8fa8',
-                              border: '1px solid rgba(139,143,168,0.2)', fontSize: '0.65rem', height: 20 }} />
-                        )}
-                      </Box>
-                    )}
-                    <Typography variant="h6" fontWeight={800} sx={{ color: status.color }}>
-                      {project.progress || 0}%
-                    </Typography>
-                  </Box>
-                </Box>
-                <LinearProgress variant="determinate" value={project.progress || 0}
-                  sx={{ height: 8, borderRadius: 4, bgcolor: '#252736',
-                    '& .MuiLinearProgress-bar': { bgcolor: status.color, borderRadius: 4,
-                      transition: 'width 0.4s ease' } }} />
-                {deliverables.length > 0 && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                    {doneCount} of {deliverables.length} deliverables completed
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                <Typography variant="body1" fontWeight={700}>Progress</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {deliverables.length > 0 && (
+                    <Box sx={{ display: 'flex', gap: 0.8 }}>
+                      {doneCount > 0 && (
+                        <Chip label={`${doneCount} done`} size="small" sx={{
+                          bgcolor: 'rgba(107,203,119,0.12)', color: '#6BCB77',
+                          border: '1px solid rgba(107,203,119,0.25)',
+                          fontSize: '0.65rem', height: 20,
+                        }} />
+                      )}
+                      {inProgCount > 0 && (
+                        <Chip label={`${inProgCount} in progress`} size="small" sx={{
+                          bgcolor: 'rgba(255,209,102,0.12)', color: '#FFD166',
+                          border: '1px solid rgba(255,209,102,0.25)',
+                          fontSize: '0.65rem', height: 20,
+                        }} />
+                      )}
+                    </Box>
+                  )}
+                  <Typography variant="h5" fontWeight={800} sx={{ color: status.color }}>
+                    {project.progress || 0}%
                   </Typography>
-                )}
+                </Box>
               </Box>
 
-              <Divider sx={{ borderColor: '#2a2d3e', mb: 2 }} />
+              <LinearProgress variant="determinate" value={project.progress || 0}
+                sx={{ height: 8, borderRadius: 4, bgcolor: '#252736', mb: 0.8,
+                  '& .MuiLinearProgress-bar': { bgcolor: status.color, borderRadius: 4,
+                    transition: 'width 0.4s ease' } }} />
 
-              {/* Deliverables checklist */}
+              <Typography variant="caption" color="text.secondary">
+                {deliverables.length > 0
+                  ? `${doneCount} of ${deliverables.length} deliverables completed — auto-tracked`
+                  : 'Add deliverables below to auto-track progress'}
+              </Typography>
+            </CardContent>
+          </Card>
+
+          {/* Deliverables card */}
+          <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e' }}>
+            <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                <Typography variant="body2" fontWeight={700}>Deliverables</Typography>
+                <Typography variant="body1" fontWeight={700}>Deliverables</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Click to cycle status
+                  Click status icon to cycle
                 </Typography>
               </Box>
 
@@ -404,7 +407,7 @@ export default function ProjectDetailPage() {
                   No deliverables yet — add one below
                 </Typography>
               ) : (
-                <Box sx={{ mb: 1.5 }}>
+                <Box sx={{ mb: 1 }}>
                   {deliverables.map(item => (
                     <DeliverableItem
                       key={item.id}
@@ -417,7 +420,6 @@ export default function ProjectDetailPage() {
                 </Box>
               )}
 
-              {/* Add deliverable input */}
               {canWrite && (
                 <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
                   <TextField
@@ -431,8 +433,11 @@ export default function ProjectDetailPage() {
                   <Button variant="contained" onClick={handleAddDeliverable}
                     disabled={!newDeliverable.trim() || addingItem}
                     sx={{ bgcolor: '#6BCB77', color: '#13141a', px: 2, flexShrink: 0,
+                      minWidth: 44,
                       '&:hover': { bgcolor: '#5ab868' } }}>
-                    {addingItem ? <CircularProgress size={16} sx={{ color: '#13141a' }} /> : <Add />}
+                    {addingItem
+                      ? <CircularProgress size={16} sx={{ color: '#13141a' }} />
+                      : <Add />}
                   </Button>
                 </Box>
               )}
@@ -440,16 +445,16 @@ export default function ProjectDetailPage() {
           </Card>
         </Grid>
 
-        {/* ── Right column ─────────────────────────────────────────────── */}
-        <Grid item xs={12} md={5}>
+        {/* RIGHT — Budget + Team */}
+        <Grid item xs={12} md={6}>
 
           {/* Budget card */}
           <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e', mb: 2.5 }}>
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <AttachMoney sx={{ color: '#6BCB77', fontSize: 20 }} />
-                  <Typography variant="body2" fontWeight={700}>Budget</Typography>
+                  <AttachMoney sx={{ color: '#6BCB77', fontSize: 18 }} />
+                  <Typography variant="body1" fontWeight={700}>Budget</Typography>
                 </Box>
                 {canWrite && !budgetEdit && (
                   <IconButton size="small" onClick={() => setBudgetEdit(true)}
@@ -471,22 +476,36 @@ export default function ProjectDetailPage() {
                     sx={{ bgcolor: '#6BCB77', color: '#13141a', flexShrink: 0 }}>
                     Save
                   </Button>
-                  <Button onClick={() => setBudgetEdit(false)} sx={{ color: '#8b8fa8', flexShrink: 0 }}>
+                  <Button onClick={() => setBudgetEdit(false)}
+                    sx={{ color: '#8b8fa8', flexShrink: 0 }}>
                     Cancel
                   </Button>
                 </Box>
               ) : (
-                <Box sx={{ mb: 2 }}>
-                  {/* Budget numbers */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5 }}>
                     <Box>
-                      <Typography variant="caption" color="text.secondary" display="block">Spent</Typography>
-                      <Typography variant="h6" fontWeight={700} sx={{ color: budgetColor }}>
+                      <Typography variant="caption" color="text.secondary" display="block" mb={0.3}>
+                        Spent
+                      </Typography>
+                      <Typography variant="h6" fontWeight={700}
+                        sx={{ color: budgetColor }}>
                         {fmt(spentBudget, project.currency)}
                       </Typography>
                     </Box>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary" display="block" mb={0.3}>
+                        Used
+                      </Typography>
+                      <Typography variant="h6" fontWeight={700}
+                        sx={{ color: budgetColor }}>
+                        {totalBudget > 0 ? `${budgetPct}%` : '—'}
+                      </Typography>
+                    </Box>
                     <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="caption" color="text.secondary" display="block">Budget</Typography>
+                      <Typography variant="caption" color="text.secondary" display="block" mb={0.3}>
+                        Total Budget
+                      </Typography>
                       <Typography variant="h6" fontWeight={700} color="text.primary">
                         {totalBudget > 0 ? fmt(totalBudget, project.currency) : 'Not set'}
                       </Typography>
@@ -495,56 +514,64 @@ export default function ProjectDetailPage() {
 
                   {totalBudget > 0 && (
                     <>
-                      <LinearProgress variant="determinate" value={budgetPct}
-                        sx={{ height: 6, borderRadius: 3, bgcolor: '#252736',
+                      <LinearProgress variant="determinate" value={Math.min(100, budgetPct)}
+                        sx={{ height: 6, borderRadius: 3, bgcolor: '#252736', mb: 0.8,
                           '& .MuiLinearProgress-bar': { bgcolor: budgetColor, borderRadius: 3 } }} />
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                        <Typography variant="caption" sx={{ color: budgetColor, fontWeight: 700 }}>
-                          {budgetPct}% used
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {fmt(totalBudget - spentBudget, project.currency)} remaining
-                        </Typography>
-                      </Box>
+                      <Typography variant="caption" color="text.secondary">
+                        {fmt(totalBudget - spentBudget, project.currency)} remaining
+                      </Typography>
                     </>
                   )}
                 </Box>
               )}
 
-              {/* Budget breakdown by member type */}
+              {/* Cost breakdown */}
               {project.members?.length > 0 && (
                 <>
-                  <Divider sx={{ borderColor: '#2a2d3e', mb: 1.5 }} />
+                  <Divider sx={{ borderColor: '#2a2d3e', my: 2 }} />
                   <Typography variant="caption" color="text.secondary"
-                    sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, display: 'block', mb: 1 }}>
+                    sx={{ textTransform: 'uppercase', letterSpacing: '0.06em',
+                      fontWeight: 600, display: 'block', mb: 1.5, fontSize: '0.68rem' }}>
                     Cost Breakdown
                   </Typography>
                   {(() => {
-                    const employees   = project.members.filter(m => m.member_type === 'direct')
-                    const contractors = project.members.filter(m => m.member_type === 'non-direct')
-                    const empCost     = employees.reduce((s, m)   => s + (m.cost || 0), 0)
-                    const conCost     = contractors.reduce((s, m) => s + (m.cost || 0), 0)
+                    const employees = project.members.filter(m =>
+                      (m.member_type || m.employment_type || 'direct') !== 'non-direct')
+                    const contractors = project.members.filter(m =>
+                      (m.member_type || m.employment_type) === 'non-direct')
+                    const empCost = employees.reduce((s, m) => s + (m.cost || 0), 0)
+                    const conCost = contractors.reduce((s, m) => s + (m.cost || 0), 0)
                     return (
-                      <Box sx={{ display: 'flex', gap: 1.5 }}>
-                        <Box sx={{ flex: 1, p: 1.5, bgcolor: '#16171f', borderRadius: 2, border: '1px solid #2a2d3e' }}>
-                          <Typography variant="caption" color="text.secondary" display="block">Employees</Typography>
-                          <Typography variant="body2" fontWeight={700} sx={{ color: '#6BCB77' }}>
-                            {fmt(empCost)}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {employees.length} people
-                          </Typography>
-                        </Box>
-                        <Box sx={{ flex: 1, p: 1.5, bgcolor: '#16171f', borderRadius: 2, border: '1px solid #2a2d3e' }}>
-                          <Typography variant="caption" color="text.secondary" display="block">Contractors</Typography>
-                          <Typography variant="body2" fontWeight={700} sx={{ color: '#FF9F43' }}>
-                            {fmt(conCost)}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {contractors.length} people
-                          </Typography>
-                        </Box>
-                      </Box>
+                      <Grid container spacing={1.5}>
+                        <Grid item xs={6}>
+                          <Box sx={{ p: 1.5, bgcolor: '#16171f', borderRadius: 2,
+                            border: '1px solid rgba(107,203,119,0.2)' }}>
+                            <Typography variant="caption" color="text.secondary" display="block" mb={0.3}>
+                              Employees
+                            </Typography>
+                            <Typography variant="body1" fontWeight={700} sx={{ color: '#6BCB77' }}>
+                              {fmt(empCost)}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {employees.length} {employees.length === 1 ? 'person' : 'people'}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Box sx={{ p: 1.5, bgcolor: '#16171f', borderRadius: 2,
+                            border: '1px solid rgba(255,159,67,0.2)' }}>
+                            <Typography variant="caption" color="text.secondary" display="block" mb={0.3}>
+                              Contractors
+                            </Typography>
+                            <Typography variant="body1" fontWeight={700} sx={{ color: '#FF9F43' }}>
+                              {fmt(conCost)}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {contractors.length} {contractors.length === 1 ? 'person' : 'people'}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
                     )
                   })()}
                 </>
@@ -552,13 +579,13 @@ export default function ProjectDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Team Members */}
+          {/* Team card */}
           <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e' }}>
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Person sx={{ color: '#4ECDC4', fontSize: 18 }} />
-                  <Typography variant="body2" fontWeight={700}>Team</Typography>
+                  <Typography variant="body1" fontWeight={700}>Team</Typography>
                   <Chip label={project.members?.length || 0} size="small"
                     sx={{ bgcolor: 'rgba(78,205,196,0.12)', color: '#4ECDC4',
                       border: '1px solid rgba(78,205,196,0.25)', fontWeight: 700, height: 20 }} />
@@ -577,42 +604,52 @@ export default function ProjectDetailPage() {
               {!project.members?.length ? (
                 <Typography variant="body2" color="text.secondary"
                   sx={{ textAlign: 'center', py: 3 }}>
-                  No members assigned
+                  No members assigned yet
                 </Typography>
               ) : (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                   {project.members.map((m, i) => {
-                    const color   = getColor(m.member_name)
+                    const color = getColor(m.member_name)
                     const isOwner = m.member_id === project.owner_id
+                    const isContractor = (m.member_type || m.employment_type) === 'non-direct'
                     return (
                       <Box key={i} sx={{
                         display: 'flex', alignItems: 'center', gap: 1.5,
                         p: 1.5, bgcolor: '#16171f', borderRadius: 2,
                         border: `1px solid ${isOwner ? color + '30' : '#2a2d3e'}`,
                       }}>
-                        <Avatar sx={{ width: 32, height: 32, bgcolor: `${color}20`,
-                          color, fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                        <Avatar sx={{ width: 32, height: 32,
+                          bgcolor: `${color}20`, color,
+                          fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
                           {(m.member_name || '?')[0].toUpperCase()}
                         </Avatar>
                         <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <Typography variant="body2" fontWeight={600} noWrap>{m.member_name}</Typography>
-                            {isOwner && <Chip label="Owner" size="small"
-                              sx={{ bgcolor: `${color}15`, color, border: `1px solid ${color}30`,
-                                fontSize: '0.6rem', height: 16, fontWeight: 700 }} />}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                            <Typography variant="body2" fontWeight={600} noWrap>
+                              {m.member_name}
+                            </Typography>
+                            {isOwner && (
+                              <Chip label="Owner" size="small" sx={{
+                                bgcolor: `${color}15`, color,
+                                border: `1px solid ${color}30`,
+                                fontSize: '0.6rem', height: 16, fontWeight: 700,
+                              }} />
+                            )}
                           </Box>
-                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                            <Chip label={m.role} size="small"
-                              sx={{ bgcolor: '#252736', color: '#8b8fa8',
-                                border: '1px solid #2a2d3e', fontSize: '0.6rem', height: 18 }} />
+                          <Box sx={{ display: 'flex', gap: 0.8, mt: 0.3, flexWrap: 'wrap' }}>
+                            <Chip label={m.role} size="small" sx={{
+                              bgcolor: '#252736', color: '#8b8fa8',
+                              border: '1px solid #2a2d3e', fontSize: '0.6rem', height: 18,
+                            }} />
                             <Chip
-                              label={m.member_type === 'non-direct' ? 'Contractor' : 'Employee'}
+                              label={isContractor ? 'Contractor' : 'Employee'}
                               size="small"
                               sx={{
-                                bgcolor: m.member_type === 'non-direct'
+                                bgcolor: isContractor
                                   ? 'rgba(255,159,67,0.1)' : 'rgba(107,203,119,0.1)',
-                                color: m.member_type === 'non-direct' ? '#FF9F43' : '#6BCB77',
-                                border: `1px solid ${m.member_type === 'non-direct' ? 'rgba(255,159,67,0.25)' : 'rgba(107,203,119,0.25)'}`,
+                                color: isContractor ? '#FF9F43' : '#6BCB77',
+                                border: `1px solid ${isContractor
+                                  ? 'rgba(255,159,67,0.25)' : 'rgba(107,203,119,0.25)'}`,
                                 fontSize: '0.6rem', height: 18,
                               }}
                             />
@@ -625,7 +662,7 @@ export default function ProjectDetailPage() {
                             </Typography>
                           )}
                           {m.days_allocated > 0 && (
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography variant="caption" color="text.secondary" display="block">
                               {m.days_allocated}d @ ${m.daily_rate}/d
                             </Typography>
                           )}

@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react'
 import { login as apiLogin, register as apiRegister } from '../services/api'
-import { getTimeGreeting } from '../utils/time'
 
 const AuthContext = createContext(null)
 
@@ -47,8 +46,23 @@ export function AuthProvider({ children }) {
   const canDelete = ['admin','manager'].includes(user?.role)
 
   const getGreeting = useCallback(() => {
-    const name = user?.full_name?.split(' ')[0] || user?.username || 'there'
-    return getTimeGreeting(name)
+    const hour = new Date().toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      hour12: false,
+    })
+    const h = parseInt(hour, 10)
+
+    const fullName = user?.full_name || ''
+    const firstName = fullName.split(' ')[0]
+    const name = (firstName && firstName !== 'System')
+      ? firstName
+      : user?.username || 'there'
+
+    if (h < 12) return `Good morning, ${name} ☀️`
+    if (h < 17) return `Good afternoon, ${name} 👋`
+    if (h < 21) return `Good evening, ${name} 🌆`
+    return `Working late, ${name}? 🌙`
   }, [user])
 
   return (

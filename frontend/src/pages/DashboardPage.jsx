@@ -51,39 +51,50 @@ function HealthCard({ label, value, icon: Icon, color, subtitle, onClick, alert 
   return (
     <Card onClick={onClick} sx={{
       bgcolor: '#1e2029',
-      border: `1px solid ${alert ? color + '40' : '#2a2d3e'}`,
+      border: `1px solid ${alert ? color + '35' : '#2a2d3e'}`,
       height: '100%',
       cursor: onClick ? 'pointer' : 'default',
       transition: 'all 0.18s ease',
-      '&:hover': onClick ? { borderColor: `${color}60`, transform: 'translateY(-2px)' } : {},
+      '&:hover': onClick ? {
+        borderColor: `${color}55`,
+        transform: 'translateY(-2px)',
+      } : {},
     }}>
-      <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <Box>
-            <Typography variant="caption" sx={{
-              color: '#8b8fa8', fontWeight: 600,
-              textTransform: 'uppercase', letterSpacing: '0.08em',
-              fontSize: '0.68rem', display: 'block', mb: 0.5,
-            }}>
-              {label}
+      <CardContent sx={{
+        p: 2,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        '&:last-child': { pb: 2 },
+      }}>
+        <Box sx={{
+          width: 34,
+          height: 34,
+          borderRadius: 2,
+          bgcolor: alert ? `${color}18` : '#252736',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <Icon sx={{ fontSize: 18, color }} />
+        </Box>
+
+        <Typography variant="h4" fontWeight={800}
+          sx={{ color, lineHeight: 1, letterSpacing: '-0.02em' }}>
+          {value ?? '—'}
+        </Typography>
+
+        <Box>
+          <Typography variant="body2" fontWeight={600} color="text.primary"
+            sx={{ fontSize: '0.8rem', lineHeight: 1.3 }}>
+            {label}
+          </Typography>
+          {subtitle && (
+            <Typography variant="caption" color="text.secondary"
+              sx={{ fontSize: '0.68rem', display: 'block', mt: 0.2 }}>
+              {subtitle}
             </Typography>
-            <Typography variant="h4" fontWeight={800}
-              sx={{ color, lineHeight: 1, letterSpacing: '-0.02em' }}>
-              {value ?? '—'}
-            </Typography>
-            {subtitle && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                {subtitle}
-              </Typography>
-            )}
-          </Box>
-          <Box sx={{
-            width: 38, height: 38, borderRadius: 2,
-            bgcolor: alert ? `${color}20` : '#252736',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Icon sx={{ fontSize: 20, color }} />
-          </Box>
+          )}
         </Box>
       </CardContent>
     </Card>
@@ -351,84 +362,79 @@ export default function DashboardPage() {
       <DashboardSearch />
 
       {/* Greeting */}
-      <Box sx={{ mb: 4 }}>
+      <Box sx={{ mb: 3 }}>
         <Typography variant="h5" fontWeight={700} letterSpacing="-0.01em">
           {getGreeting()}
         </Typography>
         <Typography variant="body2" color="text.secondary" mt={0.5}>
-          {[user?.title, user?.department].filter(Boolean).join(' · ') || 'Project Management Dashboard'}
+          Project Management Dashboard
         </Typography>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-      {/* ── Business Question Cards ─────────────────────────────────────── */}
-      {/* Q1: Status  Q2: At Risk  Q3: Overdue  Q4: Budget  Q5: Over-allocated  Q6: Active */}
-      <Grid container spacing={2} sx={{ mb: 4 }}>
-        <Grid item xs={6} sm={4} md={2}>
-          <HealthCard
-            label="Active Projects"
-            value={stats?.active_projects}
-            icon={Assignment}
-            color="#6BCB77"
-            subtitle="Not completed"
-            onClick={() => navigate('/projects')}
-          />
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          <HealthCard
-            label="At Risk"
-            value={stats?.at_risk_projects}
-            icon={Warning}
-            color="#FF9F43"
-            subtitle="Due in 14 days, <70%"
-            onClick={() => navigate('/projects')}
-            alert={stats?.at_risk_projects > 0}
-          />
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          <HealthCard
-            label="Overdue"
-            value={stats?.overdue_projects}
-            icon={Error}
-            color="#FF6B6B"
-            subtitle="Past deadline"
-            onClick={() => navigate('/projects')}
-            alert={stats?.overdue_projects > 0}
-          />
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          <HealthCard
-            label="Over Budget"
-            value={stats?.over_budget_count}
-            icon={AttachMoney}
-            color="#A29BFE"
-            subtitle=">80% budget used"
-            onClick={() => navigate('/projects')}
-            alert={stats?.over_budget_count > 0}
-          />
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          <HealthCard
-            label="Over-Allocated"
-            value={stats?.over_allocated}
-            icon={Person}
-            color="#4ECDC4"
-            subtitle="Members on 2+ projects"
-            onClick={() => navigate('/members')}
-            alert={stats?.over_allocated > 0}
-          />
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          <HealthCard
-            label="Total Projects"
-            value={stats?.total_projects}
-            icon={TrendingUp}
-            color="#74B9FF"
-            subtitle="All time"
-            onClick={() => navigate('/projects')}
-          />
-        </Grid>
+      {/* ── 6 Health Cards — 3 per row, 2 rows ──────────────────────────── */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {[
+          {
+            label: 'Active Projects',
+            value: stats?.active_projects,
+            icon: Assignment,
+            color: '#6BCB77',
+            subtitle: 'Not completed',
+            path: '/projects',
+            alert: false,
+          },
+          {
+            label: 'At Risk',
+            value: stats?.at_risk_projects,
+            icon: Warning,
+            color: '#FF9F43',
+            subtitle: 'Due ≤14 days, <70%',
+            path: '/projects',
+            alert: stats?.at_risk_projects > 0,
+          },
+          {
+            label: 'Overdue',
+            value: stats?.overdue_projects,
+            icon: Error,
+            color: '#FF6B6B',
+            subtitle: 'Past deadline',
+            path: '/projects',
+            alert: stats?.overdue_projects > 0,
+          },
+          {
+            label: 'Over Budget',
+            value: stats?.over_budget_count,
+            icon: AttachMoney,
+            color: '#A29BFE',
+            subtitle: '>80% budget used',
+            path: '/projects',
+            alert: stats?.over_budget_count > 0,
+          },
+          {
+            label: 'Over-Allocated',
+            value: stats?.over_allocated,
+            icon: Person,
+            color: '#4ECDC4',
+            subtitle: 'Members on 2+ projects',
+            path: '/members',
+            alert: stats?.over_allocated > 0,
+          },
+          {
+            label: 'Total Projects',
+            value: stats?.total_projects,
+            icon: TrendingUp,
+            color: '#74B9FF',
+            subtitle: 'All time',
+            path: '/projects',
+            alert: false,
+          },
+        ].map(card => (
+          <Grid item xs={6} sm={4} md={2} key={card.label}>
+            <HealthCard {...card} onClick={() => navigate(card.path)} />
+          </Grid>
+        ))}
       </Grid>
 
       {/* ── Budget Overview ──────────────────────────────────────────────── */}
