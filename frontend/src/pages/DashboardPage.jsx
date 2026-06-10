@@ -188,9 +188,11 @@ function DashboardSearch() {
   const [q,       setQ]       = useState('')
   const [results, setResults] = useState(null)
   const [open,    setOpen]    = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  const search = useCallback(async (val) => {
-    if (val.length < 2) { setResults(null); return }
+  const doSearch = useCallback(async (val) => {
+    if (!val || val.length < 2) { setResults(null); return }
+    setLoading(true)
     try {
       const token = localStorage.getItem('acme_token')
       const r = await axios.get(
@@ -198,7 +200,12 @@ function DashboardSearch() {
         { headers: { Authorization: `Bearer ${token}` } }
       )
       setResults(r.data)
-    } catch { setResults(null) }
+    } catch (err) {
+      console.error('Search failed:', err)
+      setResults(null)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   const handleChange = (e) => {
@@ -206,13 +213,18 @@ function DashboardSearch() {
     setQ(val)
     setOpen(true)
     clearTimeout(window._searchTimer)
-    window._searchTimer = setTimeout(() => search(val), 300)
+    window._searchTimer = setTimeout(() => doSearch(val), 350)
+  }
+
+  const handleClear = () => {
+    setQ('')
+    setResults(null)
+    setOpen(false)
+    clearTimeout(window._searchTimer)
   }
 
   const go = (path) => {
-    setOpen(false)
-    setQ('')
-    setResults(null)
+    handleClear()
     navigate(path)
   }
 
@@ -223,62 +235,83 @@ function DashboardSearch() {
     { key: 'achievements', label: 'Achievements', color: '#FFD166', nav: ()  => go('/achievements')  },
   ]
 
+  const hasResults = results && results.total > 0
+  const noResults  = results && results.total === 0
+
   return (
-    <ClickAwayListener onClickAway={() => setOpen(false)}>
+    <ClickAwayListener onClickAway={handleClear}>
       <Box sx={{ position: 'relative', maxWidth: 560, mb: 4 }}>
+        {/* Input */}
         <Paper sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.5,
-          px: 2.5, py: 1.2,
+          display: 'flex', alignItems: 'center', gap: 1.5,
+          px: 2.5, py: 1.3,
           bgcolor: '#1e2029',
           border: '1px solid',
           borderColor: open && q ? '#6BCB77' : '#2a2d3e',
           borderRadius: 3,
-          transition: 'border-color 0.2s ease',
-          boxShadow: 'none',
+          boxShadow: open && q ? '0 0 0 3px rgba(107,203,119,0.08)' : 'none',
+          transition: 'all 0.2s ease',
         }}>
-          <Search sx={{ color: '#8b8fa8', fontSize: 18, flexShrink: 0 }} />
+          {loading
+            ? <CircularProgress size={16} sx={{ color: '#8b8fa8', flexShrink: 0 }} />
+            : <Search sx={{ color: '#8b8fa8', fontSize: 18, flexShrink: 0 }} />
+          }
           <InputBase
-            placeholder="Search teams, projects, members…"
+            placeholder="Search teams, projects, members, achievements…"
             value={q}
             onChange={handleChange}
             onFocus={() => q.length >= 2 && setOpen(true)}
             sx={{
               flex: 1,
-              fontSize: '0.875rem',
-              color: 'text.primary',
+              fontSize: '0.9rem',
               '& input::placeholder': { color: '#8b8fa8', opacity: 1 },
             }}
           />
           {q && (
-            <IconButton size="small"
-              onClick={() => { setQ(''); setResults(null); setOpen(false) }}
-              sx={{ color: '#8b8fa8', p: 0.3 }}>
-              <Close sx={{ fontSize: 14 }} />
+            <IconButton size="small" onClick={handleClear}
+              sx={{ color: '#8b8fa8', p: 0.2 }}>
+              <Close sx={{ fontSize: 15 }} />
             </IconButton>
           )}
         </Paper>
 
-        {/* Results */}
-        {open && results && results.total > 0 && (
+        {/* Dropdown */}
+        {open && q.length >= 2 && (
           <Paper sx={{
             position: 'absolute',
             top: 'calc(100% + 6px)',
             left: 0, right: 0,
             bgcolor: '#1e2029',
             border: '1px solid #2a2d3e',
-            borderRadius: 2,
+            borderRadius: 2.5,
             zIndex: 9999,
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-            maxHeight: 360,
+            maxHeight: 400,
             overflow: 'auto',
           }}>
-            {SECTIONS.map(section => {
+            {/* Loading state */}
+            {loading && (
+              <Box sx={{ p: 3, display: 'flex', justifyContent: 'center' }}>
+                <CircularProgress size={20} sx={{ color: '#6BCB77' }} />
+              </Box>
+            )}
+
+            {/* No results */}
+            {!loading && noResults && (
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  No results for "{q}"
+                </Typography>
+              </Box>
+            )}
+
+            {/* Results */}
+            {!loading && hasResults && SECTIONS.map(section => {
               const items = results[section.key] || []
               if (!items.length) return null
               return (
                 <Box key={section.key}>
+                  {/* Section label */}
                   <Typography variant="caption" sx={{
                     display: 'block',
                     px: 2, pt: 1.5, pb: 0.5,
@@ -288,21 +321,30 @@ function DashboardSearch() {
                     letterSpacing: '0.08em',
                     fontSize: '0.65rem',
                   }}>
-                    {section.label}
+                    {section.label} · {items.length}
                   </Typography>
+
+                  {/* Items */}
                   {items.map(item => (
-                    <Box key={item.id}
+                    <Box
+                      key={item.id}
                       onClick={() => section.nav(item.id)}
                       sx={{
-                        display: 'flex', alignItems: 'center', gap: 1.5,
-                        px: 2, py: 1, cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1.5,
+                        px: 2, py: 1,
+                        cursor: 'pointer',
+                        transition: 'background 0.1s ease',
                         '&:hover': { bgcolor: '#252736' },
-                      }}>
+                      }}
+                    >
                       <Avatar sx={{
                         width: 26, height: 26,
-                        bgcolor: `${section.color}20`,
+                        bgcolor: `${section.color}18`,
                         color: section.color,
                         fontSize: 11, fontWeight: 700,
+                        flexShrink: 0,
                       }}>
                         {(item.name || item.title || '?')[0].toUpperCase()}
                       </Avatar>
@@ -311,7 +353,7 @@ function DashboardSearch() {
                           {item.name || item.title}
                         </Typography>
                         <Typography variant="caption" color="text.secondary" noWrap>
-                          {item.department || item.role || item.status || ''}
+                          {item.department || item.role || item.status || item.impact || ''}
                         </Typography>
                       </Box>
                       <Chip label={section.label} size="small" sx={{
@@ -319,6 +361,7 @@ function DashboardSearch() {
                         color: section.color,
                         border: `1px solid ${section.color}25`,
                         fontSize: '0.6rem', height: 18,
+                        flexShrink: 0,
                       }} />
                     </Box>
                   ))}
@@ -326,11 +369,15 @@ function DashboardSearch() {
                 </Box>
               )
             })}
-            <Box sx={{ px: 2, py: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                {results.total} result{results.total !== 1 ? 's' : ''} for "{q}"
-              </Typography>
-            </Box>
+
+            {/* Footer */}
+            {!loading && hasResults && (
+              <Box sx={{ px: 2, py: 1 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {results.total} result{results.total !== 1 ? 's' : ''} for "{q}"
+                </Typography>
+              </Box>
+            )}
           </Paper>
         )}
       </Box>

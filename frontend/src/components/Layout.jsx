@@ -1,20 +1,17 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   Box, Tooltip, Avatar, Divider, Menu, MenuItem,
   Typography, useMediaQuery, useTheme, IconButton,
-  InputBase, Paper, ListItem, ListItemText,
-  Chip, ClickAwayListener, Drawer,
+  Chip, Drawer,
 } from '@mui/material'
 import {
   Dashboard, Groups, Person, EmojiEvents,
-  AdminPanelSettings, Logout, Search, Close,
+  AdminPanelSettings, Logout,
   Timeline, Security, FolderOpen, Menu as MenuIcon,
 } from '@mui/icons-material'
-import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 
-const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
 
 const ROLE_COLORS = {
   admin: '#FF6B6B', manager: '#FFD166',
@@ -30,175 +27,6 @@ const NAV = [
   { label: 'Activity', path: '/activity', icon: <Timeline sx={{ fontSize: 16 }} /> },
 ]
 
-function GlobalSearch() {
-  const navigate = useNavigate()
-  const [q, setQ] = useState('')
-  const [results, setResults] = useState(null)
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  const search = useCallback(async (val) => {
-    if (val.length < 2) { setResults(null); return }
-    setLoading(true)
-    try {
-      const token = localStorage.getItem('acme_token')
-      const r = await axios.get(
-        `${BASE}/search?q=${encodeURIComponent(val)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      setResults(r.data)
-    } catch {
-      setResults(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  const handleChange = (e) => {
-    const val = e.target.value
-    setQ(val)
-    setOpen(true)
-    const t = setTimeout(() => search(val), 300)
-    return () => clearTimeout(t)
-  }
-
-  const handleSelect = (type, id) => {
-    setOpen(false)
-    setQ('')
-    setResults(null)
-    if (type === 'team') navigate(`/teams/${id}`)
-    if (type === 'member') navigate('/members')
-    if (type === 'achievement') navigate('/achievements')
-    if (type === 'project') navigate(`/projects/${id}`)
-  }
-
-  return (
-    <ClickAwayListener onClickAway={() => setOpen(false)}>
-      <Box sx={{ position: 'relative', width: '100%', maxWidth: 560 }}>
-        <Paper sx={{
-          display: 'flex', alignItems: 'center', gap: 1.5,
-          px: 2.5, py: 1.2,
-          bgcolor: '#16171f',
-          border: '1px solid',
-          borderColor: open ? '#6BCB77' : '#2a2d3e',
-          borderRadius: 4,
-          transition: 'all 0.2s ease',
-          boxShadow: open ? '0 0 0 3px rgba(107,203,119,0.1)' : 'none',
-        }}>
-          <Search sx={{ color: '#8b8fa8', fontSize: 20, flexShrink: 0 }} />
-          <InputBase
-            placeholder="Search teams, members, projects, achievements..."
-            value={q}
-            onChange={handleChange}
-            onFocus={() => q.length >= 2 && setOpen(true)}
-            sx={{
-              flexGrow: 1, fontSize: '0.9rem', color: 'text.primary',
-              '& input::placeholder': { color: '#8b8fa8', opacity: 1 },
-            }}
-          />
-          {q && (
-            <IconButton
-              size="small"
-              onClick={() => {
-                setQ('')
-                setResults(null)
-                setOpen(false)
-              }}
-              sx={{ color: '#8b8fa8', p: 0.3 }}
-            >
-              <Close sx={{ fontSize: 16 }} />
-            </IconButton>
-          )}
-        </Paper>
-
-        {open && results && (
-          <Paper sx={{
-            position: 'absolute', top: '110%', left: 0, right: 0,
-            bgcolor: '#1e2029', border: '1px solid #2a2d3e',
-            borderRadius: 3, zIndex: 9999,
-            boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
-            maxHeight: 420, overflow: 'auto',
-          }}>
-            {results.total === 0 ? (
-              <Box sx={{ p: 3, textAlign: 'center' }}>
-                <Typography variant="body2" color="text.secondary">
-                  No results for "{q}"
-                </Typography>
-              </Box>
-            ) : (
-              <>
-                {[
-                  { key: 'projects', label: 'Projects', color: '#A29BFE', type: 'project' },
-                  { key: 'teams', label: 'Teams', color: '#6BCB77', type: 'team' },
-                  { key: 'members', label: 'Members', color: '#4ECDC4', type: 'member' },
-                  { key: 'achievements', label: 'Achievements', color: '#FFD166', type: 'achievement' },
-                ].map((section) => {
-                  const items = results[section.key] || []
-                  if (!items.length) return null
-                  return (
-                    <Box key={section.key}>
-                      <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
-                        <Typography variant="caption" sx={{
-                          color: '#8b8fa8', fontWeight: 700,
-                          textTransform: 'uppercase', letterSpacing: '0.08em',
-                        }}>
-                          {section.label} ({items.length})
-                        </Typography>
-                      </Box>
-                      {items.map((item) => (
-                        <ListItem
-                          key={item.id}
-                          onClick={() => handleSelect(section.type, item.id)}
-                          sx={{
-                            cursor: 'pointer', py: 1,
-                            '&:hover': { bgcolor: '#252736' },
-                          }}
-                        >
-                          <Avatar sx={{
-                            width: 28, height: 28, mr: 1.5,
-                            bgcolor: `${section.color}20`,
-                            color: section.color,
-                            fontSize: 12, fontWeight: 700,
-                          }}>
-                            {(item.name || item.title || '?')[0].toUpperCase()}
-                          </Avatar>
-                          <ListItemText
-                            primary={(
-                              <Typography variant="body2" fontWeight={600}>
-                                {item.name || item.title}
-                              </Typography>
-                            )}
-                            secondary={(
-                              <Typography variant="caption" color="text.secondary">
-                                {item.department || item.role || item.impact || item.status || ''}
-                              </Typography>
-                            )}
-                          />
-                          <Chip label={section.label} size="small" sx={{
-                            bgcolor: `${section.color}12`,
-                            color: section.color,
-                            border: `1px solid ${section.color}30`,
-                            fontSize: '0.6rem',
-                          }} />
-                        </ListItem>
-                      ))}
-                      <Divider sx={{ borderColor: '#2a2d3e' }} />
-                    </Box>
-                  )
-                })}
-                <Box sx={{ px: 2, py: 1 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    {results.total} result{results.total !== 1 ? 's' : ''} for "{q}"
-                  </Typography>
-                </Box>
-              </>
-            )}
-          </Paper>
-        )}
-      </Box>
-    </ClickAwayListener>
-  )
-}
 
 export default function Layout() {
   const { user, signOut, isAdmin } = useAuth()
@@ -301,10 +129,6 @@ export default function Layout() {
 
         <Box sx={{ flexGrow: 1 }} />
 
-        <Box sx={{ width: '100%', maxWidth: 560, display: { xs: 'none', md: 'block' } }}>
-          <GlobalSearch />
-        </Box>
-
         <Tooltip title={`${user?.full_name || user?.username} · ${user?.role}`}>
           <Avatar
             onClick={(e) => setAnchorEl(e.currentTarget)}
@@ -359,9 +183,6 @@ export default function Layout() {
               <Groups sx={{ fontSize: 18, color: '#13141a' }} />
             </Box>
             <Typography fontWeight={800}>ACME Teams</Typography>
-          </Box>
-          <Box sx={{ mb: 2 }}>
-            <GlobalSearch />
           </Box>
           {navItems.map((item) => (
             <Box key={item.path}

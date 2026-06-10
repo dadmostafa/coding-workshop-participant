@@ -1498,68 +1498,62 @@ def handle_pipeline(db, user):
 # ── Global Search handler ─────────────────────────────────────────────────────
 
 def handle_search(event, db, user):
-    """
-    GET /search?q=term
-    Searches teams, members, achievements simultaneously.
-    Returns grouped results with match counts.
-    """
     if not can_read(user):
         return auth_error()
 
     q_param = (qs(event).get("q") or "").strip()
     if not q_param or len(q_param) < 2:
         return err(400, "Search query must be at least 2 characters")
-
     if len(q_param) > 100:
         return err(400, "Search query too long")
 
-    regex = {"$regex": q_param, "$options": "i"}
+    safe  = escape_regex(q_param)
+    regex = {"$regex": safe, "$options": "i"}
 
-    # Search teams
     teams = [to_doc(d) for d in db["teams"].find(active_filter({"$or": [
-        {"name": regex},
+        {"name":        regex},
         {"description": regex},
-        {"department": regex},
-        {"location": regex},
+        {"department":  regex},
+        {"location":    regex},
         {"team_leader": regex},
-        {"org_leader": regex},
-    ]})).limit(10)]
+    ]})).limit(8)]
 
-    # Search members
     members = [to_doc(d) for d in db["members"].find(active_filter({"$or": [
-        {"name": regex},
-        {"email": regex},
-        {"role": regex},
+        {"name":     regex},
+        {"email":    regex},
+        {"role":     regex},
         {"location": regex},
-    ]})).limit(10)]
+    ]})).limit(8)]
 
-    # Search achievements
     achievements = [to_doc(d) for d in db["achievements"].find(active_filter({"$or": [
-        {"title": regex},
+        {"title":       regex},
         {"description": regex},
-        {"impact": regex},
-    ]})).limit(10)]
+        {"impact":      regex},
+    ]})).limit(8)]
 
-    # Search projects
+    # Search projects collection (not deliverables)
     projects = [to_doc(d) for d in db["projects"].find(active_filter({"$or": [
-        {"name": {"$regex": regex, "$options": "i"}},
-        {"description": {"$regex": regex, "$options": "i"}},
-        {"owner_name": {"$regex": regex, "$options": "i"}},
-    ]})).limit(10)]
+        {"name":        regex},
+        {"description": regex},
+        {"owner_name":  regex},
+        {"tags":        regex},
+    ]})).limit(8)]
+
+    total = len(teams) + len(members) + len(achievements) + len(projects)
 
     return resp(200, {
-        "query": q_param,
-        "total": len(teams) + len(members) + len(achievements) + len(projects),
-        "teams": teams,
-        "members": members,
+        "query":        q_param,
+        "total":        total,
+        "teams":        teams,
+        "members":      members,
         "achievements": achievements,
-        "projects": projects,
+        "projects":     projects,
         "counts": {
-            "teams": len(teams),
-            "members": len(members),
+            "teams":        len(teams),
+            "members":      len(members),
             "achievements": len(achievements),
-            "projects": len(projects),
-        },
+            "projects":     len(projects),
+        }
     })
 
 # ── Stats / dashboard aggregations ───────────────────────────────────────────
