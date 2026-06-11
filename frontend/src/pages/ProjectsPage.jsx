@@ -4,7 +4,7 @@ import {
   Box, Typography, Button, TextField, MenuItem, InputAdornment,
   Card, CardContent, Chip, CircularProgress, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  Grid, Tooltip, IconButton, Avatar, LinearProgress,
+  Grid, Tooltip, IconButton, Avatar, LinearProgress, Skeleton,
   ToggleButtonGroup, ToggleButton, AvatarGroup,
 } from '@mui/material'
 import {
@@ -25,6 +25,7 @@ import { usePagination } from '../hooks/usePagination'
 import Pagination        from '../components/Pagination'
 import StatusSelect      from '../components/StatusSelect'
 import { toastSuccess, toastError } from '../utils/toast'
+import { KanbanCardSkeleton, ProjectRowSkeleton } from '../components/ProjectCardSkeleton'
 
 const STATUS_CONFIG = {
   backlog: { label: 'Backlog', color: '#8b8fa8', bg: 'rgba(139,143,168,0.12)' },
@@ -462,11 +463,7 @@ export default function ProjectsPage() {
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress sx={{ color: '#6BCB77' }} />
-        </Box>
-      ) : projects.length === 0 ? (
+      {!loading && projects.length === 0 ? (
         <EmptyState
           icon="🚀"
           title="No projects yet"
@@ -476,6 +473,22 @@ export default function ProjectsPage() {
           canAct={canWrite}
         />
       ) : view === 'kanban' ? (
+        loading ? (
+          <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 2 }}>
+            {Object.keys(STATUS_CONFIG).map(s => (
+              <Box key={s} sx={{ minWidth: 240, flex: '0 0 auto' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, px: 0.5 }}>
+                  <Skeleton variant="circular" width={7} height={7} sx={{ bgcolor: '#2a2d3e' }} />
+                  <Skeleton variant="text" width={80} height={14} sx={{ bgcolor: '#2a2d3e' }} />
+                </Box>
+                <Box sx={{ p: 1, bgcolor: '#16171f', borderRadius: 2.5,
+                  border: '1px solid #2a2d3e', minHeight: 80 }}>
+                  {Array.from({ length: 2 }).map((_, i) => <KanbanCardSkeleton key={i} />)}
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        ) : (
         <Box sx={{
           display: 'flex', gap: 2, overflowX: 'auto',
           pb: 2, px: 0.5,
@@ -494,10 +507,13 @@ export default function ProjectsPage() {
             />
           ))}
         </Box>
+        )
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column' }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {pagination.paginated.map(p => {
+            {loading
+              ? Array.from({ length: 8 }).map((_, i) => <ProjectRowSkeleton key={i} />)
+              : pagination.paginated.map(p => {
             const status = STATUS_CONFIG[p.status] || STATUS_CONFIG.backlog
             const priority = PRIORITY_CONFIG[p.priority] || PRIORITY_CONFIG.medium
 
@@ -587,10 +603,12 @@ export default function ProjectsPage() {
             )
           })}
           </Box>
-          <Box sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e',
-            borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
-            <Pagination {...pagination} pageSizeOptions={[10, 20, 50]} />
-          </Box>
+          {!loading && (
+            <Box sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e',
+              borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
+              <Pagination {...pagination} pageSizeOptions={[10, 20, 50]} />
+            </Box>
+          )}
         </Box>
       )}
 

@@ -23,6 +23,7 @@ import SortHeader       from '../components/SortHeader'
 import { usePagination } from '../hooks/usePagination'
 import Pagination        from '../components/Pagination'
 import { toastSuccess, toastError } from '../utils/toast'
+import TableSkeleton from '../components/TableSkeleton'
 
 const EMPTY = {
   name: '', email: '', role: '', location: '',
@@ -312,11 +313,7 @@ export default function MembersPage() {
           </TableHead>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
-                  <CircularProgress size={28} sx={{ color: '#6BCB77' }} />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton rows={8} cols={6} />
             ) : filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} sx={{ border: 'none', p: 0 }}>

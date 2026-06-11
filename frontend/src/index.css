@@ -42,3 +42,17 @@ button, a, [role="button"] {
   background: rgba(107, 203, 119, 0.3);
   color: #e8eaf0;
 }
+
+/* Skeleton shimmer override — matches dark theme */
+.MuiSkeleton-root {
+  background-color: #252736 !important;
+}
+
+.MuiSkeleton-wave::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.04),
+    transparent
+  ) !important;
+}

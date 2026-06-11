@@ -14,6 +14,7 @@ import { getTeams, createTeam, updateTeam, deleteTeam } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { toastSuccess, toastError } from '../utils/toast'
+import TableSkeleton from '../components/TableSkeleton'
 
 const TEAM_COLORS = ['#FF6B6B','#FFD166','#6BCB77','#4ECDC4','#A29BFE','#74B9FF','#FF9F43','#FD79A8']
 const getColor    = name => TEAM_COLORS[(name?.charCodeAt(0) || 0) % TEAM_COLORS.length]
@@ -220,11 +221,7 @@ export default function TeamsPage() {
           </TableHead>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
-                  <CircularProgress size={28} sx={{ color: '#6BCB77' }} />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton rows={6} cols={7} />
             ) : teams.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} align="center"

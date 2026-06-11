@@ -6,7 +6,7 @@ import {
   Tooltip, Avatar, LinearProgress, AvatarGroup,
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, MenuItem, Checkbox, List, ListItem,
-  ListItemText, ListItemIcon, InputAdornment,
+  ListItemText, ListItemIcon, InputAdornment, Skeleton,
 } from '@mui/material'
 import {
   ArrowBack, Delete, Add, Person, Edit,
@@ -254,8 +254,46 @@ export default function ProjectDetailPage() {
   }
 
   if (loading) return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-      <CircularProgress sx={{ color: '#6BCB77' }} />
+    <Box>
+      <Skeleton variant="text" width={120} height={20} sx={{ bgcolor: '#2a2d3e', mb: 2 }} />
+
+      <Skeleton variant="text" width="60%" height={40} sx={{ bgcolor: '#2a2d3e', mb: 1 }} />
+      <Skeleton variant="text" width="40%" height={18} sx={{ bgcolor: '#252736', mb: 2 }} />
+
+      <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+        {[80, 60, 70, 65].map((w, i) => (
+          <Skeleton
+            key={i}
+            variant="rounded"
+            width={w}
+            height={24}
+            sx={{ bgcolor: '#252736', borderRadius: 10 }}
+          />
+        ))}
+      </Box>
+
+      <Box sx={{ display: 'flex', gap: 1.5, mb: 3 }}>
+        {[120, 120, 120].map((w, i) => (
+          <Skeleton
+            key={i}
+            variant="rounded"
+            width={w}
+            height={68}
+            sx={{ bgcolor: '#1e2029', borderRadius: 2 }}
+          />
+        ))}
+      </Box>
+
+      <Grid container spacing={2.5}>
+        <Grid item xs={12} md={6}>
+          <Skeleton variant="rounded" width="100%" height={180} sx={{ bgcolor: '#1e2029', borderRadius: 2, mb: 2.5 }} />
+          <Skeleton variant="rounded" width="100%" height={300} sx={{ bgcolor: '#1e2029', borderRadius: 2 }} />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Skeleton variant="rounded" width="100%" height={220} sx={{ bgcolor: '#1e2029', borderRadius: 2, mb: 2.5 }} />
+          <Skeleton variant="rounded" width="100%" height={260} sx={{ bgcolor: '#1e2029', borderRadius: 2 }} />
+        </Grid>
+      </Grid>
     </Box>
   )
   if (error)   return <Alert severity="error">{error}</Alert>

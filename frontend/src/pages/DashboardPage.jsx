@@ -19,6 +19,7 @@ import {
 import { useAuth }    from '../context/AuthContext'
 import DueDateChip from '../components/DueDateChip'
 import UtilizationBar from '../components/UtilizationBar'
+import DashboardSkeleton from '../components/DashboardSkeleton'
 
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
 
@@ -353,11 +354,7 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-      <CircularProgress sx={{ color: '#6BCB77' }} />
-    </Box>
-  )
+  if (loading) return <DashboardSkeleton />
 
   const budgetPct = stats?.total_budget > 0
     ? Math.round((stats.spent_budget / stats.total_budget) * 100)
