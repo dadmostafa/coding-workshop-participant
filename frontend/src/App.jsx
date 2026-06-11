@@ -1,5 +1,6 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { createTheme, ThemeProvider, CssBaseline } from '@mui/material'
+import { AnimatePresence, motion } from 'framer-motion'
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { useAuth } from './context/AuthContext'
@@ -166,26 +167,49 @@ function AdminRoute({ children }) {
   return children
 }
 
+const pageVariants = {
+  initial:  { opacity: 0, y: 8 },
+  animate:  { opacity: 1, y: 0, transition: { duration: 0.2, ease: 'easeOut' } },
+  exit:     { opacity: 0, y: -8, transition: { duration: 0.15, ease: 'easeIn' } },
+}
+
+function PageWrapper({ children }) {
+  return (
+    <motion.div
+      variants={pageVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+    >
+      {children}
+    </motion.div>
+  )
+}
+
 export default function App() {
+  const location = useLocation()
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-          <Route index                element={<DashboardPage />} />
-          <Route path="teams"         element={<TeamsPage />} />
-          <Route path="teams/:id"     element={<TeamDetailPage />} />
-          <Route path="members"       element={<MembersPage />} />
-          <Route path="achievements"  element={<AchievementsPage />} />
-          <Route path="projects"      element={<ProjectsPage />} />
-          <Route path="projects/:id"  element={<ProjectDetailPage />} />
-          <Route path="activity"      element={<ActivityPage />} />
-          <Route path="users"         element={<AdminRoute><UsersPage /></AdminRoute>} />
-          <Route path="audit"         element={<AdminRoute><AuditPage /></AdminRoute>} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+            <Route index                element={<PageWrapper><DashboardPage /></PageWrapper>} />
+            <Route path="teams"         element={<PageWrapper><TeamsPage /></PageWrapper>} />
+            <Route path="teams/:id"     element={<PageWrapper><TeamDetailPage /></PageWrapper>} />
+            <Route path="members"       element={<PageWrapper><MembersPage /></PageWrapper>} />
+            <Route path="achievements"  element={<PageWrapper><AchievementsPage /></PageWrapper>} />
+            <Route path="projects"      element={<PageWrapper><ProjectsPage /></PageWrapper>} />
+            <Route path="projects/:id"  element={<PageWrapper><ProjectDetailPage /></PageWrapper>} />
+            <Route path="activity"      element={<PageWrapper><ActivityPage /></PageWrapper>} />
+            <Route path="users"         element={<PageWrapper><AdminRoute><UsersPage /></AdminRoute></PageWrapper>} />
+            <Route path="audit"         element={<PageWrapper><AdminRoute><AuditPage /></AdminRoute></PageWrapper>} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AnimatePresence>
       <ToastContainer
         position="bottom-right"
         autoClose={3000}

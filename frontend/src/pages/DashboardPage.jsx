@@ -20,6 +20,7 @@ import { useAuth }    from '../context/AuthContext'
 import DueDateChip from '../components/DueDateChip'
 import UtilizationBar from '../components/UtilizationBar'
 import DashboardSkeleton from '../components/DashboardSkeleton'
+import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
 
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
 
@@ -48,73 +49,102 @@ const fmt = (amount) =>
     style: 'currency', currency: 'USD', maximumFractionDigits: 0
   }).format(amount || 0)
 
+function AnimatedNumber({ value, color }) {
+  const count = useMotionValue(0)
+  const rounded = useTransform(count, v => Math.round(v))
+  const [display, setDisplay] = useState(0)
+
+  useEffect(() => {
+    const controls = animate(count, value || 0, {
+      duration: 1.2,
+      ease: 'easeOut',
+    })
+    const unsub = rounded.on('change', v => setDisplay(v))
+    return () => { controls.stop(); unsub() }
+  }, [value, count, rounded])
+
+  return (
+    <motion.span style={{ color }}>
+      {display}
+    </motion.span>
+  )
+}
+
 // ── Health Card ───────────────────────────────────────────────────────────────
 function HealthCard({ label, value, icon: Icon, color, subtitle, onClick, alert }) {
   return (
-    <Card onClick={onClick} sx={{
-      bgcolor: '#1e2029',
-      border: `1px solid ${alert ? color + '35' : '#2a2d3e'}`,
-      height: '100%',
-      cursor: onClick ? 'pointer' : 'default',
-      transition: 'all 0.18s ease',
-      '&:hover': onClick ? {
-        borderColor: `${color}55`,
-        transform: 'translateY(-2px)',
-      } : {},
-    }}>
-      <CardContent sx={{
-        p: 2,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 1,
-        '&:last-child': { pb: 2 },
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      whileHover={onClick ? { y: -3, transition: { duration: 0.15 } } : {}}
+      style={{ height: '100%' }}
+    >
+      <Card onClick={onClick} sx={{
+        bgcolor: '#1e2029',
+        border: `1px solid ${alert ? color + '35' : '#2a2d3e'}`,
+        height: '100%',
+        cursor: onClick ? 'pointer' : 'default',
       }}>
-        <Box sx={{
-          width: 34,
-          height: 34,
-          borderRadius: 2,
-          bgcolor: alert ? `${color}18` : '#252736',
+        <CardContent sx={{
+          p: 2,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          flexDirection: 'column',
+          gap: 1,
+          '&:last-child': { pb: 2 },
         }}>
-          <Icon sx={{ fontSize: 18, color }} />
-        </Box>
+          <Box sx={{
+            width: 34,
+            height: 34,
+            borderRadius: 2,
+            bgcolor: alert ? `${color}18` : '#252736',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <Icon sx={{ fontSize: 18, color }} />
+          </Box>
 
-        <Typography variant="h4" fontWeight={800}
-          sx={{ color, lineHeight: 1, letterSpacing: '-0.02em' }}>
-          {value ?? '—'}
-        </Typography>
-
-        <Box>
-          <Typography variant="body2" fontWeight={600} color="text.primary"
-            sx={{ fontSize: '0.8rem', lineHeight: 1.3 }}>
-            {label}
+          <Typography variant="h4" fontWeight={800}
+            sx={{ lineHeight: 1, letterSpacing: '-0.02em' }}>
+            <AnimatedNumber value={value} color={color} />
           </Typography>
-          {subtitle && (
-            <Typography variant="caption" color="text.secondary"
-              sx={{ fontSize: '0.68rem', display: 'block', mt: 0.2 }}>
-              {subtitle}
+
+          <Box>
+            <Typography variant="body2" fontWeight={600} color="text.primary"
+              sx={{ fontSize: '0.8rem', lineHeight: 1.3 }}>
+              {label}
             </Typography>
-          )}
-        </Box>
-      </CardContent>
-    </Card>
+            {subtitle && (
+              <Typography variant="caption" color="text.secondary"
+                sx={{ fontSize: '0.68rem', display: 'block', mt: 0.2 }}>
+                {subtitle}
+              </Typography>
+            )}
+          </Box>
+        </CardContent>
+      </Card>
+    </motion.div>
   )
 }
 
 // ── Project Row ───────────────────────────────────────────────────────────────
-function ProjectRow({ project, navigate }) {
+function ProjectRow({ project, navigate, index = 0 }) {
   const status   = STATUS_CONFIG[project.status]    || STATUS_CONFIG.backlog
   const priority = PRIORITY_CONFIG[project.priority] || PRIORITY_CONFIG.medium
 
   return (
-    <Box onClick={() => navigate(`/projects/${project.id}`)} sx={{
-      display: 'flex', alignItems: 'center', gap: 2,
-      px: 2, py: 1.5, cursor: 'pointer', borderRadius: 2,
-      transition: 'background 0.15s ease',
-      '&:hover': { bgcolor: '#252736' },
-    }}>
+    <motion.div
+      initial={{ opacity: 0, x: -10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.05, duration: 0.2, ease: 'easeOut' }}
+    >
+      <Box onClick={() => navigate(`/projects/${project.id}`)} sx={{
+        display: 'flex', alignItems: 'center', gap: 2,
+        px: 2, py: 1.5, cursor: 'pointer', borderRadius: 2,
+        transition: 'background 0.15s ease',
+        '&:hover': { bgcolor: '#252736' },
+      }}>
       {/* Status dot */}
       <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: status.color, flexShrink: 0 }} />
 
@@ -164,7 +194,8 @@ function ProjectRow({ project, navigate }) {
       <Typography variant="caption" sx={{ color: status.color, fontWeight: 700, width: 32, flexShrink: 0 }}>
         {project.progress || 0}%
       </Typography>
-    </Box>
+      </Box>
+    </motion.div>
   )
 }
 
@@ -360,6 +391,14 @@ export default function DashboardPage() {
     ? Math.round((stats.spent_budget / stats.total_budget) * 100)
     : 0
 
+  const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: i => ({
+      opacity: 1, y: 0,
+      transition: { delay: i * 0.08, duration: 0.3, ease: 'easeOut' },
+    }),
+  }
+
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
 
@@ -435,9 +474,17 @@ export default function DashboardPage() {
             path: '/projects',
             alert: false,
           },
-        ].map(card => (
+        ].map((card, i) => (
           <Grid item xs={6} sm={4} md={2} key={card.label}>
-            <HealthCard {...card} onClick={() => navigate(card.path)} />
+            <motion.div
+              custom={i}
+              variants={cardVariants}
+              initial="hidden"
+              animate="visible"
+              style={{ height: '100%' }}
+            >
+              <HealthCard {...card} onClick={() => navigate(card.path)} />
+            </motion.div>
           </Grid>
         ))}
       </Grid>
@@ -529,8 +576,8 @@ export default function DashboardPage() {
                 </Box>
               ) : (
                 <Box sx={{ py: 0.5 }}>
-                  {projects.map(p => (
-                    <ProjectRow key={p.id} project={p} navigate={navigate} />
+                  {projects.map((p, i) => (
+                    <ProjectRow key={p.id} project={p} navigate={navigate} index={i} />
                   ))}
                 </Box>
               )}

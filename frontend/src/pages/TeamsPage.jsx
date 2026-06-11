@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { toastSuccess, toastError } from '../utils/toast'
 import TableSkeleton from '../components/TableSkeleton'
+import { motion } from 'framer-motion'
 
 const TEAM_COLORS = ['#FF6B6B','#FFD166','#6BCB77','#4ECDC4','#A29BFE','#74B9FF','#FF9F43','#FD79A8']
 const getColor    = name => TEAM_COLORS[(name?.charCodeAt(0) || 0) % TEAM_COLORS.length]
@@ -45,6 +46,10 @@ function HealthBadge({ health }) {
     : 'Team is healthy'
 
   const issueCount = issues.length
+  const pulseAnimation = health.status === 'critical' ? {
+    scale: [1, 1.05, 1],
+    transition: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
+  } : {}
 
   return (
     <Tooltip
@@ -56,20 +61,22 @@ function HealthBadge({ health }) {
       arrow
       placement="left"
     >
-      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.8, cursor: 'help' }}>
-        <Chip
-          icon={cfg.icon}
-          label={issueCount > 0 ? `${issueCount} issue${issueCount > 1 ? 's' : ''}` : cfg.label}
-          size="small"
-          sx={{
-            bgcolor: `${cfg.color}15`,
-            color:   cfg.color,
-            border:  `1px solid ${cfg.color}30`,
-            fontSize: '0.68rem', fontWeight: 600, height: 22,
-            '& .MuiChip-icon': { color: cfg.color, fontSize: 13 },
-          }}
-        />
-      </Box>
+      <motion.div animate={pulseAnimation} style={{ display: 'inline-flex' }}>
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.8, cursor: 'help' }}>
+          <Chip
+            icon={cfg.icon}
+            label={issueCount > 0 ? `${issueCount} issue${issueCount > 1 ? 's' : ''}` : cfg.label}
+            size="small"
+            sx={{
+              bgcolor: `${cfg.color}15`,
+              color:   cfg.color,
+              border:  `1px solid ${cfg.color}30`,
+              fontSize: '0.68rem', fontWeight: 600, height: 22,
+              '& .MuiChip-icon': { color: cfg.color, fontSize: 13 },
+            }}
+          />
+        </Box>
+      </motion.div>
     </Tooltip>
   )
 }

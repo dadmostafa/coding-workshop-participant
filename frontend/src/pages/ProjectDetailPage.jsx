@@ -24,6 +24,7 @@ import StatusSelect      from '../components/StatusSelect'
 import DueDateChip       from '../components/DueDateChip'
 import { formatDate, formatDateTime } from '../utils/time'
 import { toastSuccess, toastError } from '../utils/toast'
+import { motion, AnimatePresence } from 'framer-motion'
 
 
 const STATUS_CONFIG = {
@@ -472,15 +473,24 @@ export default function ProjectDetailPage() {
                 </Typography>
               ) : (
                 <Box sx={{ mb: 1 }}>
-                  {deliverables.map(item => (
-                    <DeliverableItem
-                      key={item.id}
-                      item={item}
-                      onStatusChange={handleDeliverableStatus}
-                      onDelete={handleDeleteDeliverable}
-                      canWrite={canWrite}
-                    />
-                  ))}
+                  <AnimatePresence>
+                    {deliverables.map(item => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                      >
+                        <DeliverableItem
+                          item={item}
+                          onStatusChange={handleDeliverableStatus}
+                          onDelete={handleDeleteDeliverable}
+                          canWrite={canWrite}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </Box>
               )}
 
