@@ -21,6 +21,8 @@ import EmptyState from '../components/EmptyState'
 import { formatDate } from '../utils/time'
 import { useSort }   from '../hooks/useSort'
 import SortHeader    from '../components/SortHeader'
+import { usePagination } from '../hooks/usePagination'
+import Pagination        from '../components/Pagination'
 
 const STATUS_CONFIG = {
   backlog: { label: 'Backlog', color: '#8b8fa8', bg: 'rgba(139,143,168,0.12)' },
@@ -379,6 +381,8 @@ export default function ProjectsPage() {
 
   const { sorted: sortedProjects, sortBy, sortField, sortDir } = useSort(projects, 'name', 'asc')
 
+  const pagination = usePagination(sortedProjects, 10)
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
@@ -488,8 +492,9 @@ export default function ProjectsPage() {
           ))}
         </Box>
       ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {sortedProjects.map(p => {
+        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {pagination.paginated.map(p => {
             const status = STATUS_CONFIG[p.status] || STATUS_CONFIG.backlog
             const priority = PRIORITY_CONFIG[p.priority] || PRIORITY_CONFIG.medium
             const isOverdue = p.due_date
@@ -576,6 +581,11 @@ export default function ProjectsPage() {
               </Card>
             )
           })}
+          </Box>
+          <Box sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e',
+            borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
+            <Pagination {...pagination} pageSizeOptions={[10, 20, 50]} />
+          </Box>
         </Box>
       )}
 

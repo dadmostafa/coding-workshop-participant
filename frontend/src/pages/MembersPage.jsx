@@ -19,6 +19,8 @@ import ConfirmDialog     from '../components/ConfirmDialog'
 import EmptyState        from '../components/EmptyState'
 import { useSort }      from '../hooks/useSort'
 import SortHeader       from '../components/SortHeader'
+import { usePagination } from '../hooks/usePagination'
+import Pagination        from '../components/Pagination'
 
 const EMPTY = {
   name: '', email: '', role: '', location: '',
@@ -170,6 +172,8 @@ export default function MembersPage() {
 
   const { sorted: sortedMembers, sortBy, sortField, sortDir } = useSort(filtered, 'name', 'asc')
 
+  const pagination = usePagination(sortedMembers, 20)
+
   const overAllocated = Object.entries(memberProjects)
     .filter(([, ps]) => ps.length >= 2)
     .map(([id]) => id)
@@ -295,7 +299,7 @@ export default function MembersPage() {
                   />
                 </TableCell>
               </TableRow>
-            ) : sortedMembers.map(m => {
+            ) : pagination.paginated.map(m => {
               const color        = getColor(m.name)
               const projects     = memberProjects[m.id] || []
               const isOverAlloc  = projects.length >= 2
@@ -453,6 +457,11 @@ export default function MembersPage() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      <Box sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e',
+        borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
+        <Pagination {...pagination} pageSizeOptions={[10, 20, 50]} />
+      </Box>
 
       {/* Create / Edit Dialog */}
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>

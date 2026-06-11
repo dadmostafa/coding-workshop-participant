@@ -7,6 +7,8 @@ import {
 import { Refresh } from '@mui/icons-material'
 import axios from 'axios'
 import { timeAgo, formatTime } from '../utils/time'
+import { usePagination } from '../hooks/usePagination'
+import Pagination        from '../components/Pagination'
 
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
 const token = () => localStorage.getItem('acme_token')
@@ -64,6 +66,8 @@ export default function ActivityPage() {
     return () => clearInterval(interval)
   }, [load])
 
+  const pagination = usePagination(feed, 25)
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -115,8 +119,9 @@ export default function ActivityPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e' }}>
-          {feed.map((item, idx) => {
+        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+          <Card sx={{ bgcolor: '#1e2029', border: '1px solid #2a2d3e' }}>
+            {pagination.paginated.map((item, idx) => {
             const style = ACTION_STYLES[item.action] || ACTION_STYLES.UPDATE
             const icon  = RESOURCE_ICONS[item.resource] || '📋'
             return (
@@ -181,11 +186,13 @@ export default function ActivityPage() {
                     {formatTime(item.timestamp)}
                   </Typography>
                 </Box>
-                {idx < feed.length - 1 && <Divider sx={{ borderColor: '#2a2d3e' }} />}
+                {idx < pagination.paginated.length - 1 && <Divider sx={{ borderColor: '#2a2d3e' }} />}
               </Box>
             )
           })}
-        </Card>
+          </Card>
+          <Pagination {...pagination} pageSizeOptions={[10, 25, 50]} />
+        </Box>
       )}
     </Box>
   )
