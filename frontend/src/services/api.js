@@ -144,6 +144,7 @@ export const removeProjectMember = (id, mid) =>
 export const addProjectDeliverable    = (id, data)         => client.post(`/projects/${id}/deliverables`, data).then(r => r.data)
 export const updateProjectDeliverable = (id, itemId, data) => client.put(`/projects/${id}/deliverables/${itemId}`, data).then(r => r.data)
 export const deleteProjectDeliverable = (id, itemId)       => client.delete(`/projects/${id}/deliverables/${itemId}`)
+export const reorderProjectDeliverables = (id, itemIds)    => client.put(`/projects/${id}/deliverables/reorder`, { item_ids: itemIds }).then(r => r.data)
 
 export const getPipeline = () =>
   client.get('/pipeline').then(r => r.data)

@@ -11,12 +11,12 @@ import {
 import {
   ArrowBack, Delete, Add, Person, Edit,
   CheckCircle, RadioButtonUnchecked, PendingOutlined,
-  AttachMoney, TrendingUp,
+  AttachMoney, TrendingUp, DragIndicator,
 } from '@mui/icons-material'
 import {
   getProject, updateProject, getMembers,
   addProjectMember, removeProjectMember,
-  addProjectDeliverable, updateProjectDeliverable, deleteProjectDeliverable,
+  addProjectDeliverable, updateProjectDeliverable, deleteProjectDeliverable, reorderProjectDeliverables,
 } from '../services/api'
 import { useAuth }       from '../context/AuthContext'
 import ConfirmDialog     from '../components/ConfirmDialog'
@@ -52,7 +52,7 @@ const fmt = (amount, currency = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount || 0)
 
 // ── Deliverable Item ──────────────────────────────────────────────────────────
-function DeliverableItem({ item, onStatusChange, onDelete, canWrite }) {
+function DeliverableItem({ item, index, isLocked, onStatusChange, onDelete, canWrite }) {
   const statusIcon = {
     done:        <CheckCircle sx={{ color: '#6BCB77', fontSize: 20 }} />,
     in_progress: <PendingOutlined sx={{ color: '#FFD166', fontSize: 20 }} />,
@@ -71,14 +71,23 @@ function DeliverableItem({ item, onStatusChange, onDelete, canWrite }) {
       py: 1.2, px: 1.5,
       borderRadius: 2,
       transition: 'background 0.15s ease',
+      opacity: isLocked ? 0.65 : 1,
       '&:hover': { bgcolor: '#252736' },
     }}>
+      {canWrite && (
+        <Tooltip title="Drag to move">
+          <DragIndicator sx={{ color: '#8b8fa8', fontSize: 18, cursor: 'grab' }} />
+        </Tooltip>
+      )}
+
       {/* Status toggle */}
-      <Tooltip title={`Mark as ${nextStatus[item.status]?.replace('_', ' ')}`}>
-        <IconButton size="small" onClick={() => onStatusChange(item.id, nextStatus[item.status])}
-          disabled={!canWrite} sx={{ p: 0.2 }}>
+      <Tooltip title={isLocked ? 'Complete previous deliverables first' : `Mark as ${nextStatus[item.status]?.replace('_', ' ')}`}>
+        <span>
+        <IconButton size="small" onClick={() => onStatusChange(item.id, nextStatus[item.status], index)}
+          disabled={!canWrite || isLocked} sx={{ p: 0.2 }}>
           {statusIcon[item.status]}
         </IconButton>
+        </span>
       </Tooltip>
 
       {/* Title */}
@@ -154,6 +163,7 @@ export default function ProjectDetailPage() {
   // Budget edit
   const [budgetEdit,      setBudgetEdit]    = useState(false)
   const [newBudget,       setNewBudget]     = useState('')
+  const [draggingDeliverableId, setDraggingDeliverableId] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -187,7 +197,14 @@ export default function ProjectDetailPage() {
     } finally { setAddingItem(false) }
   }
 
-  const handleDeliverableStatus = async (itemId, newStatus) => {
+  const handleDeliverableStatus = async (itemId, newStatus, index) => {
+    const ordered = project?.deliverables || []
+    const previousIncomplete = ordered.slice(0, index).some(d => d.status !== 'done')
+    if (previousIncomplete) {
+      toastError('Finish previous deliverables first')
+      return
+    }
+
     try {
       const result = await updateProjectDeliverable(id, itemId, { status: newStatus })
       setProject(p => ({
@@ -198,6 +215,46 @@ export default function ProjectDetailPage() {
       if (newStatus === 'done') toastSuccess('Deliverable marked done ✓')
     } catch {
       toastError('Failed to update deliverable')
+    }
+  }
+
+  const handleDeliverableDragStart = (itemId) => {
+    if (!canWrite) return
+    setDraggingDeliverableId(itemId)
+  }
+
+  const handleDeliverableDrop = async (targetItemId) => {
+    if (!canWrite || !draggingDeliverableId || draggingDeliverableId === targetItemId) {
+      setDraggingDeliverableId(null)
+      return
+    }
+
+    const current = project?.deliverables || []
+    const fromIndex = current.findIndex(d => d.id === draggingDeliverableId)
+    const toIndex = current.findIndex(d => d.id === targetItemId)
+    if (fromIndex < 0 || toIndex < 0) {
+      setDraggingDeliverableId(null)
+      return
+    }
+
+    const reordered = [...current]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+
+    setProject(p => ({ ...p, deliverables: reordered }))
+    setDraggingDeliverableId(null)
+
+    try {
+      const result = await reorderProjectDeliverables(id, reordered.map(d => d.id))
+      setProject(p => ({
+        ...p,
+        deliverables: result.deliverables,
+        progress: result.progress,
+      }))
+      toastSuccess('Deliverables reordered')
+    } catch {
+      toastError('Failed to move deliverable')
+      load()
     }
   }
 
@@ -474,22 +531,36 @@ export default function ProjectDetailPage() {
               ) : (
                 <Box sx={{ mb: 1 }}>
                   <AnimatePresence>
-                    {deliverables.map(item => (
+                    {deliverables.map((item, index) => {
+                      const isLocked = index > 0 && item.status === 'pending' && deliverables.slice(0, index).some(d => d.status !== 'done')
+                      return (
                       <motion.div
                         key={item.id}
+                        draggable={canWrite}
+                        onDragStart={() => handleDeliverableDragStart(item.id)}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={() => handleDeliverableDrop(item.id)}
+                        onDragEnd={() => setDraggingDeliverableId(null)}
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                        style={{
+                          cursor: canWrite ? 'grab' : 'default',
+                          borderRadius: 8,
+                          border: draggingDeliverableId === item.id ? '1px dashed #4ECDC4' : '1px solid transparent',
+                        }}
                         transition={{ duration: 0.2, ease: 'easeOut' }}
                       >
                         <DeliverableItem
                           item={item}
+                          index={index}
+                          isLocked={isLocked}
                           onStatusChange={handleDeliverableStatus}
                           onDelete={handleDeleteDeliverable}
                           canWrite={canWrite}
                         />
                       </motion.div>
-                    ))}
+                    )})}
                   </AnimatePresence>
                 </Box>
               )}

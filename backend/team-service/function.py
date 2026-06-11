@@ -1354,6 +1354,7 @@ def handle_projects(event, method, path_parts, db, user):
     DELETE /projects/{id}         - soft delete (manager+)
     POST   /projects/{id}/members - add member to project
     DELETE /projects/{id}/members/{mid} - remove member from project
+    PUT    /projects/{id}/deliverables/reorder - reorder deliverables by ids
     """
     if not can_read(user):
         return auth_error()
@@ -1755,6 +1756,55 @@ def handle_projects(event, method, path_parts, db, user):
         )
         log_audit(db, user, "UPDATE", "projects", pid, details=f"Added deliverable: {title}")
         return resp(201, {"item": new_item, "progress": progress})
+
+    # ── Reorder deliverables ─────────────────────────────────────────────────
+    if method == "PUT" and len(path_parts) >= 3 and path_parts[1] == "deliverables" and path_parts[2] == "reorder":
+        if not can_write(user):
+            return permission_error("contributor")
+
+        body = parse_body(event)
+        item_ids = body.get("item_ids") or []
+        if not isinstance(item_ids, list):
+            return err(400, "item_ids must be a list")
+
+        project = col.find_one({"_id": ObjectId(pid), "deleted": {"$ne": True}})
+        if not project:
+            return err(404, "Project not found")
+
+        deliverables = project.get("deliverables", [])
+        current_ids = [d.get("id") for d in deliverables if d.get("id")]
+        if not current_ids:
+            return resp(200, {"deliverables": [], "progress": 0})
+
+        # Validate only known ids are passed and avoid duplicates in ordering payload.
+        unique_ids = []
+        seen = set()
+        for item_id in item_ids:
+            if item_id not in seen:
+                unique_ids.append(item_id)
+                seen.add(item_id)
+        unknown_ids = [item_id for item_id in unique_ids if item_id not in current_ids]
+        if unknown_ids:
+            return err(400, "item_ids contains unknown deliverable ids")
+
+        by_id = {d.get("id"): d for d in deliverables if d.get("id")}
+        reordered = [by_id[item_id] for item_id in unique_ids]
+
+        # Keep any missing existing ids at the end to prevent data loss.
+        for item_id in current_ids:
+            if item_id not in seen:
+                reordered.append(by_id[item_id])
+
+        progress = _calc_progress(reordered)
+        col.update_one(
+            {"_id": ObjectId(pid)},
+            {"$set": {
+                "deliverables": reordered,
+                "progress": progress,
+                "updated_at": datetime.now(timezone.utc),
+            }}
+        )
+        return resp(200, {"deliverables": reordered, "progress": progress})
 
     # ── Update deliverable item status ────────────────────────────────────────
     if method == "PUT" and len(path_parts) >= 3 and path_parts[1] == "deliverables":
