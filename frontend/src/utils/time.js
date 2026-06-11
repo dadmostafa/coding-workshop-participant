@@ -97,3 +97,85 @@ export function getTimeGreeting(name) {
   if (h < 21) return `Good evening, ${name} 🌆`
   return `Working late, ${name}? 🌙`
 }
+
+/**
+ * Smart due date label with urgency color
+ * Returns { label, color, bg, icon } based on how close/past the date is
+ */
+export function getDueDateStatus(dateString, status = '') {
+  if (!dateString) return null
+
+  const completed = ['completed', 'cancelled', 'released', 'done']
+  if (completed.includes(status)) {
+    return {
+      label: formatDate(dateString),
+      color: '#8b8fa8',
+      bg:    'rgba(139,143,168,0.1)',
+      icon:  '✓',
+      type:  'done',
+    }
+  }
+
+  const ts    = dateString.endsWith('Z') ? dateString : dateString + 'T00:00:00Z'
+  const due   = new Date(ts)
+  const now   = new Date()
+  const diff  = Math.floor((due - now) / (1000 * 60 * 60 * 24))
+
+  if (diff < 0) {
+    const days = Math.abs(diff)
+    return {
+      label: `${days}d overdue`,
+      color: '#FF6B6B',
+      bg:    'rgba(255,107,107,0.12)',
+      icon:  '⚠',
+      type:  'overdue',
+      days,
+    }
+  }
+
+  if (diff === 0) return {
+    label: 'Due today',
+    color: '#FF6B6B',
+    bg:    'rgba(255,107,107,0.12)',
+    icon:  '!',
+    type:  'today',
+    days:  0,
+  }
+
+  if (diff <= 3) return {
+    label: `${diff}d left`,
+    color: '#FF9F43',
+    bg:    'rgba(255,159,67,0.12)',
+    icon:  '⚡',
+    type:  'critical',
+    days:  diff,
+  }
+
+  if (diff <= 14) return {
+    label: `${diff}d left`,
+    color: '#FFD166',
+    bg:    'rgba(255,209,102,0.12)',
+    icon:  '△',
+    type:  'warning',
+    days:  diff,
+  }
+
+  if (diff <= 30) return {
+    label: `${diff}d left`,
+    color: '#6BCB77',
+    bg:    'rgba(107,203,119,0.1)',
+    icon:  '○',
+    type:  'good',
+    days:  diff,
+  }
+
+  // More than 30 days — show actual date
+  return {
+    label: formatDate(dateString),
+    color: '#8b8fa8',
+    bg:    'rgba(139,143,168,0.08)',
+    icon:  '○',
+    type:  'future',
+    days:  diff,
+  }
+}

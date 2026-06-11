@@ -21,6 +21,7 @@ import {
 import { useAuth }       from '../context/AuthContext'
 import ConfirmDialog     from '../components/ConfirmDialog'
 import StatusSelect      from '../components/StatusSelect'
+import DueDateChip       from '../components/DueDateChip'
 import { formatDate, formatDateTime } from '../utils/time'
 
 
@@ -341,16 +342,16 @@ export default function ProjectDetailPage() {
         )}
         {project.due_date && (
           <Grid item xs={6} sm={4} md={2}>
-            <Card sx={{ bgcolor: '#16171f', border: `1px solid ${isOverdue ? 'rgba(255,107,107,0.3)' : '#2a2d3e'}` }}>
+            <Card sx={{ bgcolor: '#16171f', border: '1px solid #2a2d3e' }}>
               <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                <Typography variant="caption" color="text.secondary"
-                  sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, fontSize: '0.65rem', display: 'block' }}>
+                <Typography variant="caption" sx={{
+                  color: '#8b8fa8', textTransform: 'uppercase',
+                  letterSpacing: '0.06em', fontWeight: 600,
+                  fontSize: '0.65rem', display: 'block', mb: 0.5,
+                }}>
                   Due Date
                 </Typography>
-                <Typography variant="body2" fontWeight={600}
-                  sx={{ color: isOverdue ? '#FF6B6B' : 'text.primary', mt: 0.3 }}>
-                  {isOverdue ? '⚠ ' : ''}{formatDate(project.due_date)}
-                </Typography>
+                <DueDateChip date={project.due_date} status={project.status} showTooltip={false} />
               </CardContent>
             </Card>
           </Grid>

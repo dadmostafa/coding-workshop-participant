@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import EmptyState from '../components/EmptyState'
+import DueDateChip from '../components/DueDateChip'
 import { formatDate } from '../utils/time'
 import { useSort }   from '../hooks/useSort'
 import SortHeader    from '../components/SortHeader'
@@ -178,15 +179,7 @@ function PipelineCard({ project, onEdit, onDelete, canWrite, canDelete: canDel }
                 fontSize: '0.6rem', height: 18, fontWeight: 700,
               }}
             />
-            {project.due_date && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                <CalendarToday sx={{ fontSize: 10, color: isOverdue ? '#FF6B6B' : '#8b8fa8' }} />
-                <Typography variant="caption"
-                  sx={{ color: isOverdue ? '#FF6B6B' : '#8b8fa8', fontSize: '0.65rem' }}>
-                  {formatDate(project.due_date)}
-                </Typography>
-              </Box>
-            )}
+            <DueDateChip date={project.due_date} status={project.status} />
           </Box>
 
           {project.members?.length > 0 && (
@@ -549,12 +542,7 @@ export default function ProjectsPage() {
                       </Box>
                     )}
 
-                    {p.due_date && (
-                      <Typography variant="caption"
-                        sx={{ color: isOverdue ? '#FF6B6B' : '#8b8fa8', fontSize: '0.7rem' }}>
-                        {isOverdue ? '⚠ ' : ''}{formatDate(p.due_date)}
-                      </Typography>
-                    )}
+                    <DueDateChip date={p.due_date} status={p.status} />
 
                     {p.members?.length > 0 && (
                       <AvatarGroup max={4} sx={{ '& .MuiAvatar-root': { width: 22, height: 22, fontSize: 10, border: '1px solid #1e2029' } }}>

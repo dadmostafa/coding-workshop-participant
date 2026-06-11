@@ -17,6 +17,7 @@ import {
   getStats, getPipeline, getProjects, getResourceAllocation,
 } from '../services/api'
 import { useAuth }    from '../context/AuthContext'
+import DueDateChip from '../components/DueDateChip'
 import { formatDate } from '../utils/time'
 
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
@@ -135,10 +136,17 @@ function ProjectRow({ project, navigate }) {
             }} />
           )}
         </Box>
-        <Typography variant="caption" color="text.secondary">
-          {project.owner_name || ''}
-          {project.due_date ? ` · Due ${formatDate(project.due_date)}` : ''}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mt: 0.2, flexWrap: 'wrap' }}>
+          {project.owner_name && (
+            <Typography variant="caption" color="text.secondary">
+              {project.owner_name}
+            </Typography>
+          )}
+          {project.owner_name && project.due_date && (
+            <Typography variant="caption" color="text.secondary">·</Typography>
+          )}
+          <DueDateChip date={project.due_date} status={project.status} />
+        </Box>
       </Box>
 
       {/* Priority */}
