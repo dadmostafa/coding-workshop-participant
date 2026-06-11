@@ -371,6 +371,12 @@ export default function MembersPage() {
                     <Chip
                       label={isContractor ? 'Contractor' : 'Employee'}
                       size="small"
+                      onClick={canWrite ? async (e) => {
+                        e.stopPropagation()
+                        const newType = isContractor ? 'direct' : 'non-direct'
+                        await updateMember(m.id, { employment_type: newType })
+                        load()
+                      } : undefined}
                       sx={{
                         bgcolor: isContractor
                           ? 'rgba(255,159,67,0.12)' : 'rgba(107,203,119,0.12)',
@@ -378,6 +384,12 @@ export default function MembersPage() {
                         border: `1px solid ${isContractor
                           ? 'rgba(255,159,67,0.25)' : 'rgba(107,203,119,0.25)'}`,
                         fontSize: '0.68rem', fontWeight: 600,
+                        cursor: canWrite ? 'pointer' : 'default',
+                        transition: 'all 0.15s ease',
+                        '&:hover': canWrite ? {
+                          bgcolor: isContractor
+                            ? 'rgba(255,159,67,0.25)' : 'rgba(107,203,119,0.25)',
+                        } : {},
                       }}
                     />
                   </TableCell>

@@ -23,6 +23,7 @@ import { useSort }   from '../hooks/useSort'
 import SortHeader    from '../components/SortHeader'
 import { usePagination } from '../hooks/usePagination'
 import Pagination        from '../components/Pagination'
+import StatusSelect      from '../components/StatusSelect'
 
 const STATUS_CONFIG = {
   backlog: { label: 'Backlog', color: '#8b8fa8', bg: 'rgba(139,143,168,0.12)' },
@@ -516,9 +517,14 @@ export default function ProjectsPage() {
                       {p.name}
                     </Typography>
 
-                    <Chip label={status.label} size="small"
-                      sx={{ bgcolor: status.bg, color: status.color,
-                        border: `1px solid ${status.color}30`, fontSize: '0.7rem', fontWeight: 600 }} />
+                    <StatusSelect
+                      value={p.status}
+                      onChange={async (newStatus) => {
+                        await updateProject(p.id, { status: newStatus })
+                        load()
+                      }}
+                      disabled={!canWrite}
+                    />
 
                     <Chip label={`${priority.icon} ${priority.label}`} size="small"
                       sx={{ bgcolor: `${priority.color}15`, color: priority.color,

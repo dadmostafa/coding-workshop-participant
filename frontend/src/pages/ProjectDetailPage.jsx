@@ -20,6 +20,7 @@ import {
 } from '../services/api'
 import { useAuth }       from '../context/AuthContext'
 import ConfirmDialog     from '../components/ConfirmDialog'
+import StatusSelect      from '../components/StatusSelect'
 import { formatDate, formatDateTime } from '../utils/time'
 
 
@@ -291,9 +292,14 @@ export default function ProjectDetailPage() {
             <Typography color="text.secondary" variant="body2">{project.description}</Typography>
           )}
           <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-            <Chip label={status.label} size="small"
-              sx={{ bgcolor: `${status.color}15`, color: status.color,
-                border: `1px solid ${status.color}30`, fontWeight: 600 }} />
+            <StatusSelect
+              value={project.status}
+              onChange={async (newStatus) => {
+                await updateProject(id, { status: newStatus })
+                load()
+              }}
+              disabled={!canWrite}
+            />
             <Chip label={priority.label} size="small"
               sx={{ bgcolor: `${priority.color}15`, color: priority.color,
                 border: `1px solid ${priority.color}30`, fontWeight: 600 }} />
