@@ -845,24 +845,66 @@ def handle_members(event, method, path_parts, db, user):
     if method == "POST":
         if not can_write(user):
             return permission_error("contributor")
-        body = parse_body(event)
-        for f in ["team_id", "name"]:
-            if not body.get(f):
-                return err(400, f"{f} is required")
-        if not valid_oid(body["team_id"]):
-            return err(400, "Invalid team_id")
+        body   = parse_body(event)
+        errors = {}
+
+        # Required fields
+        name = (body.get("name") or "").strip()
+        if not name:
+            errors["name"] = "Full name is required"
+        elif len(name) < 2:
+            errors["name"] = "Name must be at least 2 characters"
+        elif len(name) > 100:
+            errors["name"] = "Name must be under 100 characters"
+
+        if not (body.get("team_id") or "").strip():
+            errors["team_id"] = "Team is required"
+        elif not valid_oid(body["team_id"]):
+            errors["team_id"] = "Invalid team"
+
+        if not (body.get("role") or "").strip():
+            errors["role"] = "Job title / role is required"
+
+        # Email validation
+        email = (body.get("email") or "").strip().lower()
+        if not email:
+            errors["email"] = "Email is required"
+        elif "@" not in email or "." not in email.split("@")[-1]:
+            errors["email"] = "Enter a valid email address"
+
+        if errors:
+            return resp(400, {"error": "Validation failed", "fields": errors})
+
+        # Email uniqueness within the team
+        if email and body.get("team_id") and valid_oid(body["team_id"]):
+            if db["members"].find_one({
+                "email":   email,
+                "team_id": body["team_id"],
+                "deleted": {"$ne": True},
+            }):
+                return resp(400, {"error": "Validation failed", "fields": {
+                    "email": "A member with this email already exists in this team"
+                }})
+
         # Verify team exists and is not deleted
         if not db["teams"].find_one({"_id": ObjectId(body["team_id"]), "deleted": {"$ne": True}}):
             return err(404, "Team not found")
+
+        valid_types = ["direct", "non-direct"]
+        emp_type    = body.get("employment_type", "direct")
+        if emp_type not in valid_types:
+            return err(400, "employment_type must be direct or non-direct")
+
         doc = {
+            "name":            name,
             "team_id":         body["team_id"],
-            "name":            body["name"].strip(),
-            "email":           (body.get("email") or "").strip().lower(),
-            "role":            body.get("role", ""),
-            "location":        body.get("location", ""),
-            "employment_type": body.get("employment_type", "direct"),
+            "email":           email,
+            "role":            body["role"].strip(),
+            "location":        (body.get("location") or "").strip(),
+            "employment_type": emp_type,
             "is_team_leader":  bool(body.get("is_team_leader", False)),
             "start_date":      body.get("start_date", ""),
+            "daily_rate":      float(body.get("daily_rate", 0)),
             "created_at":      datetime.now(timezone.utc),
             "updated_at":      datetime.now(timezone.utc),
         }
@@ -1323,61 +1365,93 @@ def handle_projects(event, method, path_parts, db, user):
         if not can_write(user):
             return permission_error("contributor")
 
-        body = parse_body(event)
-
-        # Validation
+        body   = parse_body(event)
         errors = {}
-        if not (body.get("name") or "").strip():
+
+        # Required fields — industry standard
+        name = (body.get("name") or "").strip()
+        if not name:
             errors["name"] = "Project name is required"
-        if not (body.get("team_id") or ""):
-            errors["team_id"] = "team_id is required"
-        if body.get("team_id") and not valid_oid(body["team_id"]):
-            errors["team_id"] = "Invalid team_id"
+        elif len(name) < 3:
+            errors["name"] = "Project name must be at least 3 characters"
+        elif len(name) > 100:
+            errors["name"] = "Project name must be under 100 characters"
+
+        if not (body.get("team_id") or "").strip():
+            errors["team_id"] = "Team is required"
+        elif not valid_oid(body["team_id"]):
+            errors["team_id"] = "Invalid team"
+
+        if not (body.get("owner_name") or "").strip():
+            errors["owner_name"] = "Project owner is required — every project must have an owner"
+
+        if not (body.get("start_date") or "").strip():
+            errors["start_date"] = "Start date is required"
+
+        if not (body.get("due_date") or "").strip():
+            errors["due_date"] = "Due date is required"
+
+        # Date logic — start must be before due date
+        if body.get("start_date") and body.get("due_date"):
+            try:
+                start = datetime.strptime(body["start_date"], "%Y-%m-%d")
+                due   = datetime.strptime(body["due_date"],   "%Y-%m-%d")
+                if start >= due:
+                    errors["due_date"] = "Due date must be after start date"
+            except ValueError:
+                errors["start_date"] = "Invalid date format — use YYYY-MM-DD"
+
         if errors:
             return resp(400, {"error": "Validation failed", "fields": errors})
 
+        # Check name uniqueness within team
+        if name and body.get("team_id") and valid_oid(body["team_id"]):
+            if db["projects"].find_one({
+                "name":    name,
+                "team_id": body["team_id"],
+                "deleted": {"$ne": True},
+            }):
+                return resp(400, {"error": "Validation failed", "fields": {
+                    "name": "A project with this name already exists in this team"
+                }})
+
         # Verify team exists
-        if not db["teams"].find_one({"_id": ObjectId(body["team_id"]), "deleted": {"$ne": True}}):
-            return err(404, "Team not found")
+        if body.get("team_id") and valid_oid(body["team_id"]):
+            if not db["teams"].find_one({"_id": ObjectId(body["team_id"]), "deleted": {"$ne": True}}):
+                return err(404, "Team not found")
 
-        # Validate status
-        valid_statuses = ["backlog", "planning", "in_progress", "review", "completed", "on_hold", "cancelled"]
-        status = body.get("status", "backlog")
-        if status not in valid_statuses:
-            return err(400, f"status must be one of: {', '.join(valid_statuses)}")
-
-        # Validate priority
+        valid_statuses   = ["backlog", "planning", "in_progress", "review", "completed", "on_hold", "cancelled"]
         valid_priorities = ["low", "medium", "high", "critical"]
+
+        status   = body.get("status",   "backlog")
         priority = body.get("priority", "medium")
+
+        if status   not in valid_statuses:
+            return err(400, "Invalid status")
         if priority not in valid_priorities:
-            return err(400, f"priority must be one of: {', '.join(valid_priorities)}")
+            return err(400, "Invalid priority")
 
         now = datetime.now(timezone.utc)
         doc = {
-            "name":           body["name"].strip(),
-            "description":    body.get("description", ""),
-            "team_id":        body["team_id"],
-            "status":         status,
-            "priority":       priority,
-            "owner_id":       body.get("owner_id", ""),
-            "owner_name":     body.get("owner_name", ""),
-            "members":        [],   # populated via /projects/{id}/members
-            "tags":           body.get("tags", []),
-            "start_date":     body.get("start_date", ""),
-            "due_date":       body.get("due_date", ""),
-            "progress":       0,    # auto-calculated from deliverables
-            "links":          body.get("links", []),
-
-            # Budget fields
-            "total_budget":   float(body.get("total_budget", 0)),
-            "currency":       body.get("currency", "USD"),
-
-            # Deliverables checklist
-            "deliverables":   [],   # list of {id, title, status, created_at}
-
-            "created_by":     user.get("username", ""),
-            "created_at":     now,
-            "updated_at":     now,
+            "name":          name,
+            "description":   body.get("description", "").strip(),
+            "team_id":       body["team_id"],
+            "status":        status,
+            "priority":      priority,
+            "owner_id":      body.get("owner_id",   ""),
+            "owner_name":    body.get("owner_name", "").strip(),
+            "members":       [],
+            "tags":          body.get("tags", []),
+            "start_date":    body.get("start_date", ""),
+            "due_date":      body.get("due_date",   ""),
+            "progress":      0,
+            "total_budget":  float(body.get("total_budget", 0)),
+            "spent_budget":  0,
+            "currency":      body.get("currency", "USD"),
+            "deliverables":  [],
+            "created_by":    user.get("username", ""),
+            "created_at":    now,
+            "updated_at":    now,
         }
 
         result = col.insert_one(doc)

@@ -27,6 +27,7 @@ const EMPTY = {
   name: '', email: '', role: '', location: '',
   team_id: '', employment_type: 'direct',
   is_team_leader: false, start_date: '',
+  daily_rate: '',
 }
 
 const AVATAR_COLORS = ['#FF6B6B','#FFD166','#6BCB77','#4ECDC4','#A29BFE','#74B9FF','#FF9F43','#FD79A8']
@@ -149,6 +150,7 @@ export default function MembersPage() {
       employment_type: m.employment_type || 'direct',
       is_team_leader:  m.is_team_leader  || false,
       start_date:      m.start_date      || '',
+      daily_rate:      m.daily_rate      || '',
     })
     setFormErr({})
     setOpen(true)
@@ -156,8 +158,14 @@ export default function MembersPage() {
 
   const handleSave = async () => {
     const e = {}
-    if (!form.name.trim()) e.name    = 'Name is required'
-    if (!form.team_id)     e.team_id = 'Team is required'
+    if (!form.name.trim())  e.name    = 'Full name is required'
+    if (form.name.length < 2) e.name  = 'Name must be at least 2 characters'
+    if (!form.team_id)      e.team_id = 'Team is required'
+    if (!form.role.trim())  e.role    = 'Job title is required'
+    if (!form.email.trim()) e.email   = 'Email is required'
+    else if (!form.email.includes('@') || !form.email.split('@')[1]?.includes('.')) {
+      e.email = 'Enter a valid email address'
+    }
     if (Object.keys(e).length) { setFormErr(e); return }
     setSaving(true)
     try {
@@ -166,7 +174,9 @@ export default function MembersPage() {
         : await createMember(form)
       setOpen(false); load()
     } catch (err) {
-      setFormErr({ _api: err.response?.data?.error || 'Save failed' })
+      const fields = err.response?.data?.fields
+      if (fields) setFormErr(fields)
+      else setFormErr({ _api: err.response?.data?.error || 'Save failed' })
     } finally { setSaving(false) }
   }
 
@@ -507,35 +517,89 @@ export default function MembersPage() {
         <DialogTitle>{editing ? 'Edit Resource' : 'Add Resource'}</DialogTitle>
         <DialogContent>
           {formErr._api && <Alert severity="error" sx={{ mb: 1.5 }}>{formErr._api}</Alert>}
+
+          {!editing && (
+            <Alert severity="info" sx={{
+              mb: 2, bgcolor: 'rgba(78,205,196,0.08)', color: '#4ECDC4',
+              border: '1px solid rgba(78,205,196,0.2)', fontSize: '0.8rem',
+              '& .MuiAlert-icon': { color: '#4ECDC4' },
+            }}>
+              Fields marked * are required. Email must be unique within the team.
+            </Alert>
+          )}
+
           <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
             <Grid item xs={12}>
-              <TextField label="Full Name" fullWidth required {...f('name')} />
+              <TextField
+                label="Full Name *" fullWidth required autoFocus
+                {...f('name')}
+                helperText={formErr.name || 'First and last name'}
+              />
             </Grid>
             <Grid item xs={12}>
-              <TextField select label="Team" fullWidth required {...f('team_id')}>
+              <TextField select label="Team *" fullWidth required {...f('team_id')}>
                 <MenuItem value="">Select team</MenuItem>
                 {teams.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
               </TextField>
             </Grid>
+
+            <Grid item xs={12}>
+              <TextField
+                label="Work Email *" type="email" fullWidth required
+                {...f('email')}
+                helperText={formErr.email || 'Must be unique within the team'}
+              />
+            </Grid>
+
             <Grid item xs={6}>
-              <TextField label="Email" fullWidth {...f('email')} />
+              <TextField
+                label="Job Title / Role *" fullWidth required
+                {...f('role')}
+                helperText={formErr.role || 'e.g. Senior Engineer, Designer'}
+              />
             </Grid>
             <Grid item xs={6}>
-              <TextField label="Job Title / Role" fullWidth {...f('role')} />
+              <TextField
+                label="Location" fullWidth
+                {...f('location')}
+                helperText="City or Remote"
+              />
             </Grid>
-            <Grid item xs={6}>
-              <TextField label="Location" fullWidth {...f('location')} />
-            </Grid>
+
             <Grid item xs={6}>
               <TextField select label="Employment Type" fullWidth {...f('employment_type')}>
-                <MenuItem value="direct">Employee</MenuItem>
-                <MenuItem value="non-direct">Contractor</MenuItem>
+                <MenuItem value="direct">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#6BCB77' }} />
+                    Employee (Direct)
+                  </Box>
+                </MenuItem>
+                <MenuItem value="non-direct">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#FF9F43' }} />
+                    Contractor (Non-Direct)
+                  </Box>
+                </MenuItem>
               </TextField>
             </Grid>
             <Grid item xs={6}>
-              <TextField label="Start Date" type="date" fullWidth
-                InputLabelProps={{ shrink: true }} {...f('start_date')} />
+              <TextField
+                label="Start Date" type="date" fullWidth
+                InputLabelProps={{ shrink: true }}
+                {...f('start_date')}
+                helperText="When they joined or will join"
+              />
             </Grid>
+
+            <Grid item xs={6}>
+              <TextField
+                label="Daily Rate" type="number" fullWidth
+                {...f('daily_rate')}
+                InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                helperText="Used for project budget calculations"
+              />
+            </Grid>
+
             <Grid item xs={6} sx={{ display: 'flex', alignItems: 'center' }}>
               <FormControlLabel
                 control={
@@ -545,17 +609,27 @@ export default function MembersPage() {
                     sx={{ color: '#6BCB77', '&.Mui-checked': { color: '#6BCB77' } }}
                   />
                 }
-                label="Team Leader"
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>Team Leader</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Designate as team lead
+                    </Typography>
+                  </Box>
+                }
               />
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
+
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
           <Button onClick={() => setOpen(false)} sx={{ color: '#8b8fa8' }}>Cancel</Button>
           <Button variant="contained" onClick={handleSave} disabled={saving}
             sx={{ bgcolor: '#6BCB77', color: '#13141a', fontWeight: 700,
               '&:hover': { bgcolor: '#5ab868' } }}>
-            {saving ? <CircularProgress size={18} sx={{ color: '#13141a' }} /> : 'Save'}
+            {saving
+              ? <CircularProgress size={18} sx={{ color: '#13141a' }} />
+              : editing ? 'Save Changes' : 'Add Resource'}
           </Button>
         </DialogActions>
       </Dialog>

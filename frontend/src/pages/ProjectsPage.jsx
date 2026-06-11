@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Typography, Button, TextField, MenuItem,
+  Box, Typography, Button, TextField, MenuItem, InputAdornment,
   Card, CardContent, Chip, CircularProgress, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions,
   Grid, Tooltip, IconButton, Avatar, LinearProgress,
@@ -328,13 +328,17 @@ export default function ProjectsPage() {
   }
 
   const handleSave = async () => {
-    const errs = {}
-    if (!form.name.trim()) errs.name = 'Name is required'
-    if (!form.team_id) errs.team_id = 'Team is required'
-    if (Object.keys(errs).length) {
-      setFormErr(errs)
-      return
+    const e = {}
+    if (!form.name.trim())       e.name       = 'Project name is required'
+    if (form.name.length < 3)    e.name       = 'Name must be at least 3 characters'
+    if (!form.team_id)           e.team_id    = 'Team is required'
+    if (!form.owner_name.trim()) e.owner_name = 'Project owner is required'
+    if (!form.start_date)        e.start_date = 'Start date is required'
+    if (!form.due_date)          e.due_date   = 'Due date is required'
+    if (form.start_date && form.due_date && form.start_date >= form.due_date) {
+      e.due_date = 'Due date must be after start date'
     }
+    if (Object.keys(e).length) { setFormErr(e); return }
 
     setSaving(true)
     try {
@@ -342,6 +346,7 @@ export default function ProjectsPage() {
         ...form,
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         progress: parseInt(form.progress, 10) || 0,
+        total_budget: parseFloat(form.total_budget) || 0,
       }
       if (editing) {
         await updateProject(editing.id, payload)
@@ -351,7 +356,9 @@ export default function ProjectsPage() {
       setOpen(false)
       load()
     } catch (err) {
-      setFormErr({ _api: err.response?.data?.error || 'Save failed' })
+      const fields = err.response?.data?.fields
+      if (fields) setFormErr(fields)
+      else setFormErr({ _api: err.response?.data?.error || 'Save failed' })
     } finally {
       setSaving(false)
     }
@@ -577,70 +584,125 @@ export default function ProjectsPage() {
       )}
 
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editing ? 'Edit Project' : 'New Project'}</DialogTitle>
+        <DialogTitle sx={{ pb: 0.5 }}>
+          {editing ? 'Edit Project' : 'New Project'}
+        </DialogTitle>
+
         <DialogContent>
-          {formErr._api && <Alert severity="error" sx={{ mb: 1 }}>{formErr._api}</Alert>}
-          <Grid container spacing={1} sx={{ mt: 0.5 }}>
+          {formErr._api && <Alert severity="error" sx={{ mb: 1.5 }}>{formErr._api}</Alert>}
+
+          {!editing && (
+            <Alert severity="info" sx={{
+              mb: 2, bgcolor: 'rgba(78,205,196,0.08)', color: '#4ECDC4',
+              border: '1px solid rgba(78,205,196,0.2)', fontSize: '0.8rem',
+              '& .MuiAlert-icon': { color: '#4ECDC4' },
+            }}>
+              Fields marked * are required. Start date must be before due date.
+            </Alert>
+          )}
+
+          <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
             <Grid item xs={12}>
-              <TextField label="Project Name" fullWidth margin="dense" required {...f('name')} />
+              <TextField
+                label="Project Name *" fullWidth required
+                {...f('name')}
+                helperText={formErr.name || 'Descriptive but concise — max 100 characters'}
+              />
             </Grid>
+
             <Grid item xs={12}>
-              <TextField label="Description" fullWidth margin="dense" multiline rows={2} {...f('description')} />
+              <TextField
+                label="Description" fullWidth multiline rows={2}
+                {...f('description')}
+                helperText="Briefly describe the project goal and scope"
+              />
             </Grid>
-            <Grid item xs={12}>
-              <TextField select label="Team" fullWidth margin="dense" required {...f('team_id')}>
+
+            <Grid item xs={6}>
+              <TextField select label="Team *" fullWidth required {...f('team_id')}>
                 <MenuItem value="">Select team</MenuItem>
                 {teams.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
               </TextField>
             </Grid>
             <Grid item xs={6}>
-              <TextField select label="Status" fullWidth margin="dense" {...f('status')}>
+              <TextField select label="Project Owner *" fullWidth required
+                value={form.owner_id}
+                error={!!formErr.owner_name}
+                helperText={formErr.owner_name || 'Responsible for delivery'}
+                onChange={e => {
+                  const m = members.find(m => m.id === e.target.value)
+                  setForm(p => ({ ...p, owner_id: e.target.value, owner_name: m?.name || '' }))
+                }}>
+                <MenuItem value="">Select owner</MenuItem>
+                {members.map(m => <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>)}
+              </TextField>
+            </Grid>
+
+            <Grid item xs={6}>
+              <TextField select label="Status" fullWidth {...f('status')}>
                 {Object.entries(STATUS_CONFIG).map(([k, v]) => (
                   <MenuItem key={k} value={k}>{v.label}</MenuItem>
                 ))}
               </TextField>
             </Grid>
             <Grid item xs={6}>
-              <TextField select label="Priority" fullWidth margin="dense" {...f('priority')}>
+              <TextField select label="Priority" fullWidth {...f('priority')}>
                 {Object.entries(PRIORITY_CONFIG).map(([k, v]) => (
                   <MenuItem key={k} value={k}>{v.icon} {v.label}</MenuItem>
                 ))}
               </TextField>
             </Grid>
-            <Grid item xs={12}>
-              <TextField select label="Project Owner" fullWidth margin="dense"
-                value={form.owner_id}
-                onChange={e => {
-                  const member = members.find(m => m.id === e.target.value)
-                  setForm(p => ({ ...p, owner_id: e.target.value, owner_name: member?.name || '' }))
-                }}>
-                <MenuItem value="">No owner assigned</MenuItem>
-                {members.map(m => <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>)}
+
+            <Grid item xs={6}>
+              <TextField
+                label="Start Date *" type="date" fullWidth required
+                InputLabelProps={{ shrink: true }}
+                {...f('start_date')}
+                helperText={formErr.start_date || 'When work begins'}
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                label="Due Date *" type="date" fullWidth required
+                InputLabelProps={{ shrink: true }}
+                {...f('due_date')}
+                helperText={formErr.due_date || 'Must be after start date'}
+              />
+            </Grid>
+
+            <Grid item xs={6}>
+              <TextField
+                label="Total Budget" type="number" fullWidth
+                {...f('total_budget')}
+                InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                helperText="Optional — set now or later"
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField select label="Currency" fullWidth {...f('currency')}>
+                {['USD', 'GBP', 'EUR', 'CAD', 'AUD'].map(c => (
+                  <MenuItem key={c} value={c}>{c}</MenuItem>
+                ))}
               </TextField>
             </Grid>
-            <Grid item xs={6}>
-              <TextField label="Start Date" type="date" fullWidth margin="dense"
-                InputLabelProps={{ shrink: true }} {...f('start_date')} />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField label="Due Date" type="date" fullWidth margin="dense"
-                InputLabelProps={{ shrink: true }} {...f('due_date')} />
-            </Grid>
+
             <Grid item xs={12}>
-              <TextField label="Progress (%)" type="number" fullWidth margin="dense"
-                inputProps={{ min: 0, max: 100 }} {...f('progress')} />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField label="Tags (comma separated)" fullWidth margin="dense"
-                placeholder="frontend, api, urgent" {...f('tags')} />
+              <TextField
+                label="Tags" fullWidth {...f('tags')}
+                helperText="Comma-separated — e.g. frontend, api, security"
+              />
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
+
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
           <Button onClick={() => setOpen(false)} sx={{ color: '#8b8fa8' }}>Cancel</Button>
           <Button variant="contained" onClick={handleSave} disabled={saving}
-            sx={{ bgcolor: '#6BCB77', color: '#13141a', '&:hover': { bgcolor: '#5ab868' } }}>
-            {saving ? <CircularProgress size={18} sx={{ color: '#13141a' }} /> : 'Save'}
+            sx={{ bgcolor: '#6BCB77', color: '#13141a', fontWeight: 700,
+              '&:hover': { bgcolor: '#5ab868' } }}>
+            {saving
+              ? <CircularProgress size={18} sx={{ color: '#13141a' }} />
+              : editing ? 'Save Changes' : 'Create Project'}
           </Button>
         </DialogActions>
       </Dialog>
