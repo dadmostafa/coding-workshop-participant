@@ -931,12 +931,21 @@ def handle_members(event, method, path_parts, db, user):
         update = {k: body[k] for k in [
             "name", "email", "role", "location",
             "employment_type", "is_team_leader",
-            "start_date", "team_id"
+            "start_date", "team_id", "daily_rate"
         ] if k in body}
         if not update:
             return err(400, "No fields to update")
         if "email" in update:
             update["email"] = update["email"].strip().lower()
+        if "employment_type" in update and update["employment_type"] not in ["direct", "non-direct"]:
+            return err(400, "employment_type must be direct or non-direct")
+        if "daily_rate" in update:
+            try:
+                update["daily_rate"] = float(update["daily_rate"])
+            except (TypeError, ValueError):
+                return err(400, "daily_rate must be a valid number")
+            if update["daily_rate"] < 0:
+                return err(400, "daily_rate cannot be negative")
         update["updated_at"] = datetime.now(timezone.utc)
         result = col.update_one(
             {"_id": ObjectId(mid), "deleted": {"$ne": True}},
@@ -944,6 +953,41 @@ def handle_members(event, method, path_parts, db, user):
         )
         if result.matched_count == 0:
             return err(404, "Member not found")
+
+        # Keep project member rows and spent budgets in sync when member fields change.
+        sync_fields = {k: v for k, v in update.items() if k in ["daily_rate", "name", "employment_type"]}
+        if sync_fields:
+            projects = db["projects"].find({"deleted": {"$ne": True}, "members.member_id": mid})
+            for project in projects:
+                members = project.get("members", [])
+                changed = False
+                for member_row in members:
+                    if member_row.get("member_id") != mid:
+                        continue
+                    if "name" in sync_fields:
+                        member_row["member_name"] = sync_fields["name"]
+                        changed = True
+                    if "employment_type" in sync_fields:
+                        member_row["member_type"] = sync_fields["employment_type"]
+                        changed = True
+                    if "daily_rate" in sync_fields:
+                        rate = float(sync_fields["daily_rate"])
+                        days = float(member_row.get("days_allocated", 0) or 0)
+                        member_row["daily_rate"] = rate
+                        member_row["cost"] = round(rate * days, 2)
+                        changed = True
+
+                if changed:
+                    spent_budget = round(sum(float(m.get("cost", 0) or 0) for m in members), 2)
+                    db["projects"].update_one(
+                        {"_id": project["_id"]},
+                        {"$set": {
+                            "members": members,
+                            "spent_budget": spent_budget,
+                            "updated_at": datetime.now(timezone.utc),
+                        }}
+                    )
+
         doc = col.find_one({"_id": ObjectId(mid)})
         log_audit(db, user, "UPDATE", "members", mid, changes=update)
         return resp(200, to_doc(doc))
@@ -1435,14 +1479,18 @@ def handle_projects(event, method, path_parts, db, user):
         valid_members    = []
         for m in incoming_members:
             if m.get("member_id"):
+                daily_rate = float(m.get("daily_rate", 0))
+                days_allocated = float(m.get("days_allocated", 0))
+                raw_cost = m.get("cost")
+                cost = round(float(raw_cost), 2) if raw_cost not in (None, "") else round(daily_rate * days_allocated, 2)
                 valid_members.append({
                     "member_id":      m.get("member_id", ""),
                     "member_name":    m.get("member_name", ""),
                     "role":           m.get("role", "member"),
                     "member_type":    m.get("member_type", "direct"),
-                    "daily_rate":     float(m.get("daily_rate", 0)),
-                    "days_allocated": float(m.get("days_allocated", 0)),
-                    "cost":           float(m.get("cost", 0)),
+                    "daily_rate":     daily_rate,
+                    "days_allocated": days_allocated,
+                    "cost":           cost,
                     "added_at":       datetime.now(timezone.utc).isoformat(),
                     "added_by":       user.get("username", "system"),
                 })
@@ -1520,14 +1568,18 @@ def handle_projects(event, method, path_parts, db, user):
             valid    = []
             for m in incoming:
                 if m.get("member_id"):
+                    daily_rate = float(m.get("daily_rate", 0))
+                    days_allocated = float(m.get("days_allocated", 0))
+                    raw_cost = m.get("cost")
+                    cost = round(float(raw_cost), 2) if raw_cost not in (None, "") else round(daily_rate * days_allocated, 2)
                     valid.append({
                         "member_id":      m.get("member_id", ""),
                         "member_name":    m.get("member_name", ""),
                         "role":           m.get("role", "member"),
                         "member_type":    m.get("member_type", "direct"),
-                        "daily_rate":     float(m.get("daily_rate", 0)),
-                        "days_allocated": float(m.get("days_allocated", 0)),
-                        "cost":           float(m.get("cost", 0)),
+                        "daily_rate":     daily_rate,
+                        "days_allocated": days_allocated,
+                        "cost":           cost,
                         "added_at":       m.get("added_at", datetime.now(timezone.utc).isoformat()),
                         "added_by":       m.get("added_by", user.get("username", "")),
                     })
@@ -1597,7 +1649,7 @@ def handle_projects(event, method, path_parts, db, user):
             return err(400, "Member already on this project")
 
         # Cost tracking fields
-        daily_rate     = float(body.get("daily_rate", 0))
+        daily_rate     = float(body.get("daily_rate", member.get("daily_rate", 0)) or 0)
         days_allocated = float(body.get("days_allocated", 0))
         cost           = round(daily_rate * days_allocated, 2)
 
@@ -1640,15 +1692,23 @@ def handle_projects(event, method, path_parts, db, user):
             return permission_error("contributor")
 
         member_id = path_parts[2]
-        result = col.update_one(
-            {"_id": ObjectId(pid), "deleted": {"$ne": True}},
+        project = col.find_one({"_id": ObjectId(pid), "deleted": {"$ne": True}})
+        if not project:
+            return err(404, "Project not found")
+
+        filtered_members = [m for m in project.get("members", []) if m.get("member_id") != member_id]
+        spent_budget = round(sum(float(m.get("cost", 0) or 0) for m in filtered_members), 2)
+
+        col.update_one(
+            {"_id": ObjectId(pid)},
             {
-                "$pull": {"members": {"member_id": member_id}},
-                "$set": {"updated_at": datetime.now(timezone.utc)},
+                "$set": {
+                    "members": filtered_members,
+                    "spent_budget": spent_budget,
+                    "updated_at": datetime.now(timezone.utc),
+                },
             },
         )
-        if result.matched_count == 0:
-            return err(404, "Project not found")
         log_audit(
             db,
             user,
