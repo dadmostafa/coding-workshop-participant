@@ -18,7 +18,7 @@ import {
 } from '../services/api'
 import { useAuth }    from '../context/AuthContext'
 import DueDateChip from '../components/DueDateChip'
-import { formatDate } from '../utils/time'
+import UtilizationBar from '../components/UtilizationBar'
 
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/team-service'
 
@@ -597,11 +597,13 @@ export default function DashboardPage() {
                     return (
                       <Box key={m.member_id} sx={{
                         display: 'flex', alignItems: 'center', gap: 1.5,
-                        px: 1, py: 0.8, borderRadius: 2,
+                        px: 1, py: 1, borderRadius: 2,
+                        '&:hover': { bgcolor: '#252736' },
                       }}>
                         <Avatar sx={{
-                          width: 28, height: 28, bgcolor: `${color}20`,
-                          color, fontSize: 11, fontWeight: 700, flexShrink: 0,
+                          width: 28, height: 28,
+                          bgcolor: `${color}20`, color,
+                          fontSize: 11, fontWeight: 700, flexShrink: 0,
                         }}>
                           {(m.member_name || '?')[0].toUpperCase()}
                         </Avatar>
@@ -609,14 +611,23 @@ export default function DashboardPage() {
                           <Typography variant="body2" fontWeight={600} noWrap>
                             {m.member_name}
                           </Typography>
+                          <UtilizationBar
+                            pct={m.utilization_pct}
+                            days={m.total_days}
+                            capacity={m.capacity_days}
+                            height={4}
+                            compact
+                          />
+                        </Box>
+                        <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+                          <Typography variant="caption"
+                            sx={{ color: '#FF6B6B', fontWeight: 700, display: 'block' }}>
+                            {m.utilization_pct}%
+                          </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {m.project_count} active projects · {m.total_days}d allocated
+                            {m.project_count} projects
                           </Typography>
                         </Box>
-                        <Chip label={`${m.project_count} projects`} size="small"
-                          sx={{ bgcolor: 'rgba(255,107,107,0.1)', color: '#FF6B6B',
-                            border: '1px solid rgba(255,107,107,0.2)',
-                            fontSize: '0.6rem', height: 18 }} />
                       </Box>
                     )
                   })}

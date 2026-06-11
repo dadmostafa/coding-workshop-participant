@@ -9,7 +9,7 @@ import {
 } from '@mui/material'
 import {
   Add, Edit, Delete, ViewKanban, TableRows,
-  CalendarToday, Person, Download,
+  Person, Download,
 } from '@mui/icons-material'
 import {
   getProjects, createProject, updateProject,
@@ -19,7 +19,6 @@ import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import EmptyState from '../components/EmptyState'
 import DueDateChip from '../components/DueDateChip'
-import { formatDate } from '../utils/time'
 import { useSort }   from '../hooks/useSort'
 import SortHeader    from '../components/SortHeader'
 import { usePagination } from '../hooks/usePagination'
@@ -96,9 +95,6 @@ function PipelineCard({ project, onEdit, onDelete, canWrite, canDelete: canDel }
   const navigate = useNavigate()
   const status = STATUS_CONFIG[project.status] || STATUS_CONFIG.backlog
   const priority = PRIORITY_CONFIG[project.priority] || PRIORITY_CONFIG.medium
-  const isOverdue = project.due_date
-    && new Date(project.due_date) < new Date()
-    && !['completed', 'cancelled'].includes(project.status)
 
   return (
     <Card
@@ -491,9 +487,6 @@ export default function ProjectsPage() {
             {pagination.paginated.map(p => {
             const status = STATUS_CONFIG[p.status] || STATUS_CONFIG.backlog
             const priority = PRIORITY_CONFIG[p.priority] || PRIORITY_CONFIG.medium
-            const isOverdue = p.due_date
-              && new Date(p.due_date) < new Date()
-              && !['completed', 'cancelled'].includes(p.status)
 
             return (
               <Card key={p.id} sx={{

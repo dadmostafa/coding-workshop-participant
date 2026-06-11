@@ -1767,21 +1767,22 @@ def handle_search(event, db, user):
 def handle_resources(event, method, db, user):
     """
     GET /resources/allocation
-    Shows which members are allocated across multiple active projects.
-    Answers: "Which team members are over-allocated?"
+    Returns members with their project assignments and utilization %.
+    Industry standard: 100% = fully allocated, >100% = over-allocated.
+    Assumes 20 working days per month as baseline capacity.
     """
     if not can_read(user):
         return auth_error()
 
+    WORKING_DAYS_PER_MONTH = 20
     filt        = {"deleted": {"$ne": True}}
     active_filt = {**filt, "status": {"$nin": ["completed", "cancelled"]}}
 
-    # Get all active projects with their members
     active_projects = list(db["projects"].find(active_filt, {
-        "name": 1, "status": 1, "members": 1, "due_date": 1, "priority": 1
+        "name": 1, "status": 1, "members": 1,
+        "due_date": 1, "priority": 1, "progress": 1,
     }))
 
-    # Build member → projects map
     member_map = {}
     for proj in active_projects:
         proj_id   = str(proj["_id"])
@@ -1805,6 +1806,7 @@ def handle_resources(event, method, db, user):
                 "status":       proj.get("status", ""),
                 "due_date":     proj.get("due_date", ""),
                 "priority":     proj.get("priority", ""),
+                "progress":     proj.get("progress", 0),
                 "role":         m.get("role", ""),
                 "days_allocated": m.get("days_allocated", 0),
                 "cost":         m.get("cost", 0),
@@ -1812,22 +1814,33 @@ def handle_resources(event, method, db, user):
             member_map[mid]["total_days"] += m.get("days_allocated", 0)
             member_map[mid]["total_cost"] += m.get("cost", 0)
 
-    # Tag over-allocated (2+ projects)
     all_allocations = list(member_map.values())
     for a in all_allocations:
-        a["project_count"]   = len(a["projects"])
-        a["is_over_allocated"] = len(a["projects"]) >= 2
+        total_days  = a["total_days"]
+        utilization = round((total_days / WORKING_DAYS_PER_MONTH) * 100)
 
-    # Sort by project count descending
-    all_allocations.sort(key=lambda x: x["project_count"], reverse=True)
+        a["project_count"]      = len(a["projects"])
+        a["utilization_pct"]    = utilization
+        a["utilization_status"] = (
+            "critical" if utilization > 100 else
+            "warning" if utilization >= 80 else
+            "optimal" if utilization >= 50 else
+            "low"
+        )
+        a["is_over_allocated"]  = utilization > 100
+        a["capacity_days"]      = WORKING_DAYS_PER_MONTH
+        a["remaining_days"]     = max(0, WORKING_DAYS_PER_MONTH - total_days)
+
+    all_allocations.sort(key=lambda x: x["utilization_pct"], reverse=True)
 
     over_allocated = [a for a in all_allocations if a["is_over_allocated"]]
 
     return resp(200, {
-        "all_allocations":    all_allocations,
-        "over_allocated":     over_allocated,
+        "all_allocations":      all_allocations,
+        "over_allocated":       over_allocated,
         "over_allocated_count": len(over_allocated),
-        "total_allocated":    len(all_allocations),
+        "total_allocated":      len(all_allocations),
+        "working_days_baseline": WORKING_DAYS_PER_MONTH,
     })
 
 

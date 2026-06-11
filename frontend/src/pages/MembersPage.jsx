@@ -12,11 +12,12 @@ import {
 } from '@mui/icons-material'
 import {
   getMembers, createMember, updateMember, deleteMember,
-  getTeams, getProjects,
+  getTeams, getProjects, getResourceAllocation,
 } from '../services/api'
 import { useAuth }       from '../context/AuthContext'
 import ConfirmDialog     from '../components/ConfirmDialog'
 import EmptyState        from '../components/EmptyState'
+import UtilizationBar    from '../components/UtilizationBar'
 import { useSort }      from '../hooks/useSort'
 import SortHeader       from '../components/SortHeader'
 import { usePagination } from '../hooks/usePagination'
@@ -74,6 +75,7 @@ export default function MembersPage() {
   const [members,      setMembers]      = useState([])
   const [teams,        setTeams]        = useState([])
   const [memberProjects, setMemberProjects] = useState({})  // memberId → projects[]
+  const [utilization,  setUtilization]  = useState({})
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState('')
   const [search,       setSearch]       = useState('')
@@ -103,6 +105,16 @@ export default function MembersPage() {
         }
       })
       setMemberProjects(map)
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    getResourceAllocation().then(data => {
+      const map = {}
+      ;(data.all_allocations || []).forEach(a => {
+        map[a.member_id] = a
+      })
+      setUtilization(map)
     }).catch(() => {})
   }, [])
 
@@ -271,24 +283,25 @@ export default function MembersPage() {
         <Table sx={{ tableLayout: 'fixed' }}>
           <TableHead>
             <TableRow>
-              <SortHeader label="Resource"        field="name"             sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '22%' }} />
-              <SortHeader label="Role"            field="role"             sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '12%' }} />
-              <SortHeader label="Location"        field="location"         sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '11%' }} />
-              <SortHeader label="Type"            field="employment_type"  sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '10%' }} />
-              <TableCell sx={{ width: '35%' }}>Active Projects</TableCell>
+              <SortHeader label="Resource"   field="name"            sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '20%' }} />
+              <SortHeader label="Role"       field="role"            sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '12%' }} />
+              <SortHeader label="Location"   field="location"        sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '10%' }} />
+              <SortHeader label="Type"       field="employment_type" sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '10%' }} />
+              <TableCell sx={{ width: '14%' }}>Utilization</TableCell>
+              <TableCell sx={{ width: '24%' }}>Active Projects</TableCell>
               <TableCell sx={{ width: '10%' }} align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
                   <CircularProgress size={28} sx={{ color: '#6BCB77' }} />
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} sx={{ border: 'none', p: 0 }}>
+                <TableCell colSpan={7} sx={{ border: 'none', p: 0 }}>
                   <EmptyState
                     icon="👤"
                     title="No resources found"
@@ -392,6 +405,20 @@ export default function MembersPage() {
                         } : {},
                       }}
                     />
+                  </TableCell>
+
+                  {/* Utilization */}
+                  <TableCell>
+                    {utilization[m.id] ? (
+                      <UtilizationBar
+                        pct={utilization[m.id].utilization_pct}
+                        days={utilization[m.id].total_days}
+                        capacity={utilization[m.id].capacity_days}
+                        height={5}
+                      />
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">—</Typography>
+                    )}
                   </TableCell>
 
                   {/* Active Projects — badges */}
