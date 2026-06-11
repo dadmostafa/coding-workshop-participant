@@ -23,6 +23,7 @@ import ConfirmDialog     from '../components/ConfirmDialog'
 import StatusSelect      from '../components/StatusSelect'
 import DueDateChip       from '../components/DueDateChip'
 import { formatDate, formatDateTime } from '../utils/time'
+import { toastSuccess, toastError } from '../utils/toast'
 
 
 const STATUS_CONFIG = {
@@ -179,8 +180,9 @@ export default function ProjectDetailPage() {
         deliverables: [...(p.deliverables || []), result.item],
         progress:     result.progress,
       }))
+      toastSuccess('Deliverable added')
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add deliverable')
+      toastError(err.response?.data?.error || 'Failed to add deliverable')
     } finally { setAddingItem(false) }
   }
 
@@ -192,8 +194,9 @@ export default function ProjectDetailPage() {
         deliverables: result.deliverables,
         progress:     result.progress,
       }))
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update')
+      if (newStatus === 'done') toastSuccess('Deliverable marked done ✓')
+    } catch {
+      toastError('Failed to update deliverable')
     }
   }
 
@@ -222,8 +225,9 @@ export default function ProjectDetailPage() {
         ...p,
         total_budget: parseFloat(newBudget) || 0,
       }))
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save budget')
+      toastSuccess('Budget updated')
+    } catch {
+      toastError('Failed to save budget')
     }
   }
 
@@ -239,12 +243,13 @@ export default function ProjectDetailPage() {
         daily_rate:     parseFloat(memberDailyRate) || 0,
         days_allocated: parseFloat(memberDays) || 0,
       })
+      toastSuccess('Member added to project')
       setAddMemberOpen(false)
       setSelectedMember(''); setMemberRole('member')
       setMemberDailyRate(''); setMemberDays('')
       load()
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add member')
+      toastError(err.response?.data?.error || 'Failed to add member')
     } finally { setAddingMember(false) }
   }
 
@@ -296,8 +301,13 @@ export default function ProjectDetailPage() {
             <StatusSelect
               value={project.status}
               onChange={async (newStatus) => {
-                await updateProject(id, { status: newStatus })
-                load()
+                try {
+                  await updateProject(id, { status: newStatus })
+                  toastSuccess(`Status updated to ${newStatus.replace('_', ' ')}`)
+                  load()
+                } catch {
+                  toastError('Failed to update status')
+                }
               }}
               disabled={!canWrite}
             />
@@ -776,9 +786,15 @@ export default function ProjectDetailPage() {
         title="Remove Member"
         message={`Remove ${removingMember?.member_name} from this project?`}
         onConfirm={async () => {
-          await removeProjectMember(id, removingMember.member_id)
-          setRemovingMember(null)
-          load()
+          try {
+            await removeProjectMember(id, removingMember.member_id)
+            toastSuccess(`${removingMember.member_name} removed from project`)
+            setRemovingMember(null)
+            load()
+          } catch {
+            toastError('Failed to remove member')
+            setRemovingMember(null)
+          }
         }}
         onCancel={() => setRemovingMember(null)}
       />

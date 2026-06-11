@@ -24,6 +24,7 @@ import SortHeader    from '../components/SortHeader'
 import { usePagination } from '../hooks/usePagination'
 import Pagination        from '../components/Pagination'
 import StatusSelect      from '../components/StatusSelect'
+import { toastSuccess, toastError } from '../utils/toast'
 
 const STATUS_CONFIG = {
   backlog: { label: 'Backlog', color: '#8b8fa8', bg: 'rgba(139,143,168,0.12)' },
@@ -350,15 +351,20 @@ export default function ProjectsPage() {
       }
       if (editing) {
         await updateProject(editing.id, payload)
+        toastSuccess(`"${form.name}" updated successfully`)
       } else {
         await createProject(payload)
+        toastSuccess(`"${form.name}" created successfully`)
       }
       setOpen(false)
       load()
     } catch (err) {
       const fields = err.response?.data?.fields
       if (fields) setFormErr(fields)
-      else setFormErr({ _api: err.response?.data?.error || 'Save failed' })
+      else {
+        setFormErr({ _api: err.response?.data?.error || 'Save failed' })
+        toastError(err.response?.data?.error || 'Failed to save project')
+      }
     } finally {
       setSaving(false)
     }
@@ -513,8 +519,13 @@ export default function ProjectsPage() {
                     <StatusSelect
                       value={p.status}
                       onChange={async (newStatus) => {
-                        await updateProject(p.id, { status: newStatus })
-                        load()
+                        try {
+                          await updateProject(p.id, { status: newStatus })
+                          toastSuccess(`Status updated to ${newStatus.replace('_', ' ')}`)
+                          load()
+                        } catch {
+                          toastError('Failed to update status')
+                        }
                       }}
                       disabled={!canWrite}
                     />
@@ -768,7 +779,17 @@ export default function ProjectsPage() {
         open={!!deleting}
         title="Delete Project"
         message={`Delete "${deleting?.name}"? This cannot be undone.`}
-        onConfirm={async () => { await deleteProject(deleting.id); setDeleting(null); load() }}
+        onConfirm={async () => {
+          try {
+            await deleteProject(deleting.id)
+            toastSuccess(`"${deleting.name}" deleted`)
+            setDeleting(null)
+            load()
+          } catch {
+            toastError('Failed to delete project')
+            setDeleting(null)
+          }
+        }}
         onCancel={() => setDeleting(null)}
       />
     </Box>

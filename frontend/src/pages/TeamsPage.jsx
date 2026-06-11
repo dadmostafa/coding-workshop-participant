@@ -13,6 +13,7 @@ import {
 import { getTeams, createTeam, updateTeam, deleteTeam } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { toastSuccess, toastError } from '../utils/toast'
 
 const TEAM_COLORS = ['#FF6B6B','#FFD166','#6BCB77','#4ECDC4','#A29BFE','#74B9FF','#FF9F43','#FD79A8']
 const getColor    = name => TEAM_COLORS[(name?.charCodeAt(0) || 0) % TEAM_COLORS.length]
@@ -122,10 +123,17 @@ export default function TeamsPage() {
     if (Object.keys(e).length) { setFormErr(e); return }
     setSaving(true)
     try {
-      editing ? await updateTeam(editing.id, form) : await createTeam(form)
+      if (editing) {
+        await updateTeam(editing.id, form)
+        toastSuccess(`"${form.name}" updated`)
+      } else {
+        await createTeam(form)
+        toastSuccess(`"${form.name}" team created`)
+      }
       setOpen(false); load()
     } catch (err) {
       setFormErr({ _api: err.response?.data?.error || 'Save failed' })
+      toastError(err.response?.data?.error || 'Failed to save team')
     } finally { setSaving(false) }
   }
 
@@ -433,7 +441,17 @@ export default function TeamsPage() {
         open={!!deleting}
         title="Delete Team"
         message={`Delete "${deleting?.name}"? This will affect all members and projects on this team.`}
-        onConfirm={async () => { await deleteTeam(deleting.id); setDeleting(null); load() }}
+        onConfirm={async () => {
+          try {
+            await deleteTeam(deleting.id)
+            toastSuccess(`"${deleting.name}" deleted`)
+            setDeleting(null)
+            load()
+          } catch {
+            toastError('Failed to delete team')
+            setDeleting(null)
+          }
+        }}
         onCancel={() => setDeleting(null)}
       />
     </Box>

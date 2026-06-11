@@ -22,6 +22,7 @@ import { useSort }      from '../hooks/useSort'
 import SortHeader       from '../components/SortHeader'
 import { usePagination } from '../hooks/usePagination'
 import Pagination        from '../components/Pagination'
+import { toastSuccess, toastError } from '../utils/toast'
 
 const EMPTY = {
   name: '', email: '', role: '', location: '',
@@ -169,14 +170,21 @@ export default function MembersPage() {
     if (Object.keys(e).length) { setFormErr(e); return }
     setSaving(true)
     try {
-      editing
-        ? await updateMember(editing.id, form)
-        : await createMember(form)
+      if (editing) {
+        await updateMember(editing.id, form)
+        toastSuccess(`${form.name} updated`)
+      } else {
+        await createMember(form)
+        toastSuccess(`${form.name} added to the team`)
+      }
       setOpen(false); load()
     } catch (err) {
       const fields = err.response?.data?.fields
       if (fields) setFormErr(fields)
-      else setFormErr({ _api: err.response?.data?.error || 'Save failed' })
+      else {
+        setFormErr({ _api: err.response?.data?.error || 'Save failed' })
+        toastError(err.response?.data?.error || 'Failed to save member')
+      }
     } finally { setSaving(false) }
   }
 
@@ -638,7 +646,17 @@ export default function MembersPage() {
         open={!!deleting}
         title="Remove Resource"
         message={`Remove "${deleting?.name}" from the system? This will also remove them from any projects they are assigned to.`}
-        onConfirm={async () => { await deleteMember(deleting.id); setDeleting(null); load() }}
+        onConfirm={async () => {
+          try {
+            await deleteMember(deleting.id)
+            toastSuccess(`${deleting.name} removed`)
+            setDeleting(null)
+            load()
+          } catch {
+            toastError('Failed to remove member')
+            setDeleting(null)
+          }
+        }}
         onCancel={() => setDeleting(null)}
       />
     </Box>

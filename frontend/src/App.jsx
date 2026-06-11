@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { createTheme, ThemeProvider, CssBaseline } from '@mui/material'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 import { useAuth } from './context/AuthContext'
 import LoginPage        from './pages/LoginPage'
 import DashboardPage    from './pages/DashboardPage'
@@ -184,6 +186,23 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <ToastContainer
+        position="bottom-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        pauseOnHover
+        draggable
+        theme="dark"
+        toastStyle={{
+          backgroundColor: '#1e2029',
+          border: '1px solid #2a2d3e',
+          borderRadius: '10px',
+          color: '#e8eaf0',
+          fontSize: '0.85rem',
+        }}
+      />
     </ThemeProvider>
   )
 }
