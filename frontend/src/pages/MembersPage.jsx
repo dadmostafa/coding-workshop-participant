@@ -17,6 +17,8 @@ import {
 import { useAuth }       from '../context/AuthContext'
 import ConfirmDialog     from '../components/ConfirmDialog'
 import EmptyState        from '../components/EmptyState'
+import { useSort }      from '../hooks/useSort'
+import SortHeader       from '../components/SortHeader'
 
 const EMPTY = {
   name: '', email: '', role: '', location: '',
@@ -166,6 +168,8 @@ export default function MembersPage() {
     ? members.filter(m => m.employment_type === typeFilter)
     : members
 
+  const { sorted: sortedMembers, sortBy, sortField, sortDir } = useSort(filtered, 'name', 'asc')
+
   const overAllocated = Object.entries(memberProjects)
     .filter(([, ps]) => ps.length >= 2)
     .map(([id]) => id)
@@ -263,10 +267,10 @@ export default function MembersPage() {
         <Table sx={{ tableLayout: 'fixed' }}>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ width: '22%' }}>Resource</TableCell>
-              <TableCell sx={{ width: '12%' }}>Role</TableCell>
-              <TableCell sx={{ width: '11%' }}>Location</TableCell>
-              <TableCell sx={{ width: '10%' }}>Type</TableCell>
+              <SortHeader label="Resource"        field="name"             sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '22%' }} />
+              <SortHeader label="Role"            field="role"             sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '12%' }} />
+              <SortHeader label="Location"        field="location"         sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '11%' }} />
+              <SortHeader label="Type"            field="employment_type"  sortField={sortField} sortDir={sortDir} onSort={sortBy} sx={{ width: '10%' }} />
               <TableCell sx={{ width: '35%' }}>Active Projects</TableCell>
               <TableCell sx={{ width: '10%' }} align="right">Actions</TableCell>
             </TableRow>
@@ -291,7 +295,7 @@ export default function MembersPage() {
                   />
                 </TableCell>
               </TableRow>
-            ) : filtered.map(m => {
+            ) : sortedMembers.map(m => {
               const color        = getColor(m.name)
               const projects     = memberProjects[m.id] || []
               const isOverAlloc  = projects.length >= 2

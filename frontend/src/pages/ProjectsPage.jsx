@@ -19,6 +19,8 @@ import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import EmptyState from '../components/EmptyState'
 import { formatDate } from '../utils/time'
+import { useSort }   from '../hooks/useSort'
+import SortHeader    from '../components/SortHeader'
 
 const STATUS_CONFIG = {
   backlog: { label: 'Backlog', color: '#8b8fa8', bg: 'rgba(139,143,168,0.12)' },
@@ -375,6 +377,8 @@ export default function ProjectsPage() {
     return acc
   }, {})
 
+  const { sorted: sortedProjects, sortBy, sortField, sortDir } = useSort(projects, 'name', 'asc')
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
@@ -485,7 +489,7 @@ export default function ProjectsPage() {
         </Box>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {projects.map(p => {
+          {sortedProjects.map(p => {
             const status = STATUS_CONFIG[p.status] || STATUS_CONFIG.backlog
             const priority = PRIORITY_CONFIG[p.priority] || PRIORITY_CONFIG.medium
             const isOverdue = p.due_date
