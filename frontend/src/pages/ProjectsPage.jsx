@@ -12,8 +12,8 @@ import {
   Person, Download,
 } from '@mui/icons-material'
 import {
-  getProjects, createProject, updateProject,
-  deleteProject, getTeams, getMembers, getPipeline,
+  getProjects, updateProject, createProject, deleteProject,
+  getTeams, getMembers, getPipeline,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -263,7 +263,7 @@ export default function ProjectsPage() {
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [view, setView] = useState('kanban')
+  const [view, setView] = useState('list')
   const [teamFilter, setTeamFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [open, setOpen] = useState(false)
@@ -604,82 +604,136 @@ export default function ProjectsPage() {
           <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
             <Grid item xs={12}>
               <TextField
-                label="Project Name *" fullWidth required
-                {...f('name')}
+                label="Project Name *"
+                fullWidth
+                required
+                value={form.name}
+                onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                error={!!formErr.name}
                 helperText={formErr.name || 'Descriptive but concise — max 100 characters'}
+                inputProps={{ maxLength: 100 }}
               />
             </Grid>
 
             <Grid item xs={12}>
               <TextField
-                label="Description" fullWidth multiline rows={2}
-                {...f('description')}
+                label="Description"
+                fullWidth
+                multiline
+                rows={2}
+                value={form.description}
+                onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
                 helperText="Briefly describe the project goal and scope"
               />
             </Grid>
 
-            <Grid item xs={6}>
-              <TextField select label="Team *" fullWidth required {...f('team_id')}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                select
+                label="Team *"
+                fullWidth
+                required
+                value={form.team_id}
+                onChange={e => setForm(p => ({ ...p, team_id: e.target.value }))}
+                error={!!formErr.team_id}
+                helperText={formErr.team_id || 'Which team owns this project'}
+              >
                 <MenuItem value="">Select team</MenuItem>
                 {teams.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
               </TextField>
             </Grid>
-            <Grid item xs={6}>
-              <TextField select label="Project Owner *" fullWidth required
+            <Grid item xs={12} sm={6}>
+              <TextField
+                select
+                label="Project Owner *"
+                fullWidth
+                required
                 value={form.owner_id}
+                onChange={e => {
+                  const m = members.find(mem => mem.id === e.target.value)
+                  setForm(p => ({ ...p, owner_id: e.target.value, owner_name: m?.name || '' }))
+                }}
                 error={!!formErr.owner_name}
                 helperText={formErr.owner_name || 'Responsible for delivery'}
-                onChange={e => {
-                  const m = members.find(m => m.id === e.target.value)
-                  setForm(p => ({ ...p, owner_id: e.target.value, owner_name: m?.name || '' }))
-                }}>
+              >
                 <MenuItem value="">Select owner</MenuItem>
                 {members.map(m => <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>)}
               </TextField>
             </Grid>
 
-            <Grid item xs={6}>
-              <TextField select label="Status" fullWidth {...f('status')}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                select
+                label="Status"
+                fullWidth
+                value={form.status}
+                onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
+              >
                 {Object.entries(STATUS_CONFIG).map(([k, v]) => (
                   <MenuItem key={k} value={k}>{v.label}</MenuItem>
                 ))}
               </TextField>
             </Grid>
-            <Grid item xs={6}>
-              <TextField select label="Priority" fullWidth {...f('priority')}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                select
+                label="Priority"
+                fullWidth
+                value={form.priority}
+                onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}
+              >
                 {Object.entries(PRIORITY_CONFIG).map(([k, v]) => (
                   <MenuItem key={k} value={k}>{v.icon} {v.label}</MenuItem>
                 ))}
               </TextField>
             </Grid>
 
-            <Grid item xs={6}>
+            <Grid item xs={12} sm={6}>
               <TextField
-                label="Start Date *" type="date" fullWidth required
-                InputLabelProps={{ shrink: true }}
-                {...f('start_date')}
+                label="Start Date *"
+                type="date"
+                fullWidth
+                required
+                value={form.start_date}
+                onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))}
+                error={!!formErr.start_date}
                 helperText={formErr.start_date || 'When work begins'}
               />
             </Grid>
-            <Grid item xs={6}>
+            <Grid item xs={12} sm={6}>
               <TextField
-                label="Due Date *" type="date" fullWidth required
-                InputLabelProps={{ shrink: true }}
-                {...f('due_date')}
+                label="Due Date *"
+                type="date"
+                fullWidth
+                required
+                value={form.due_date}
+                onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))}
+                error={!!formErr.due_date}
                 helperText={formErr.due_date || 'Must be after start date'}
               />
             </Grid>
 
-            <Grid item xs={6}>
+            <Grid item xs={12} sm={6}>
               <TextField
-                label="Total Budget" type="number" fullWidth
-                {...f('total_budget')}
-                InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                label="Total Budget"
+                type="number"
+                fullWidth
+                value={form.total_budget}
+                onChange={e => setForm(p => ({ ...p, total_budget: e.target.value }))}
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                }}
                 helperText="Optional — set now or later"
               />
             </Grid>
-            <Grid item xs={6}>
-              <TextField select label="Currency" fullWidth {...f('currency')}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                select
+                label="Currency"
+                fullWidth
+                value={form.currency}
+                onChange={e => setForm(p => ({ ...p, currency: e.target.value }))}
+              >
                 {['USD', 'GBP', 'EUR', 'CAD', 'AUD'].map(c => (
                   <MenuItem key={c} value={c}>{c}</MenuItem>
                 ))}
@@ -688,7 +742,10 @@ export default function ProjectsPage() {
 
             <Grid item xs={12}>
               <TextField
-                label="Tags" fullWidth {...f('tags')}
+                label="Tags"
+                fullWidth
+                value={form.tags}
+                onChange={e => setForm(p => ({ ...p, tags: e.target.value }))}
                 helperText="Comma-separated — e.g. frontend, api, security"
               />
             </Grid>

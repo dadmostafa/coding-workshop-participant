@@ -1431,6 +1431,26 @@ def handle_projects(event, method, path_parts, db, user):
         if priority not in valid_priorities:
             return err(400, "Invalid priority")
 
+        incoming_members = body.get("members", [])
+        valid_members    = []
+        for m in incoming_members:
+            if m.get("member_id"):
+                valid_members.append({
+                    "member_id":      m.get("member_id", ""),
+                    "member_name":    m.get("member_name", ""),
+                    "role":           m.get("role", "member"),
+                    "member_type":    m.get("member_type", "direct"),
+                    "daily_rate":     float(m.get("daily_rate", 0)),
+                    "days_allocated": float(m.get("days_allocated", 0)),
+                    "cost":           float(m.get("cost", 0)),
+                    "added_at":       datetime.now(timezone.utc).isoformat(),
+                    "added_by":       user.get("username", "system"),
+                })
+
+        spent_budget = float(body.get("spent_budget", 0))
+        if not spent_budget and valid_members:
+            spent_budget = round(sum(m.get("cost", 0) for m in valid_members), 2)
+
         now = datetime.now(timezone.utc)
         doc = {
             "name":          name,
@@ -1440,13 +1460,13 @@ def handle_projects(event, method, path_parts, db, user):
             "priority":      priority,
             "owner_id":      body.get("owner_id",   ""),
             "owner_name":    body.get("owner_name", "").strip(),
-            "members":       [],
+            "members":       valid_members,
             "tags":          body.get("tags", []),
             "start_date":    body.get("start_date", ""),
             "due_date":      body.get("due_date",   ""),
-            "progress":      0,
+            "progress":      int(body.get("progress", 0)),
             "total_budget":  float(body.get("total_budget", 0)),
-            "spent_budget":  0,
+            "spent_budget":  spent_budget,
             "currency":      body.get("currency", "USD"),
             "deliverables":  [],
             "created_by":    user.get("username", ""),
@@ -1490,9 +1510,29 @@ def handle_projects(event, method, path_parts, db, user):
             "name", "description", "status", "priority",
             "owner_id", "owner_name", "tags", "start_date",
             "due_date", "links", "total_budget", "currency",
+            "spent_budget",
         ]:
             if field in body:
                 update[field] = body[field]
+
+        if "members" in body:
+            incoming = body["members"]
+            valid    = []
+            for m in incoming:
+                if m.get("member_id"):
+                    valid.append({
+                        "member_id":      m.get("member_id", ""),
+                        "member_name":    m.get("member_name", ""),
+                        "role":           m.get("role", "member"),
+                        "member_type":    m.get("member_type", "direct"),
+                        "daily_rate":     float(m.get("daily_rate", 0)),
+                        "days_allocated": float(m.get("days_allocated", 0)),
+                        "cost":           float(m.get("cost", 0)),
+                        "added_at":       m.get("added_at", datetime.now(timezone.utc).isoformat()),
+                        "added_by":       m.get("added_by", user.get("username", "")),
+                    })
+            update["members"]      = valid
+            update["spent_budget"] = round(sum(m.get("cost", 0) for m in valid), 2)
 
         if "progress" in body:
             try:
