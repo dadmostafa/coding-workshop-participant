@@ -83,7 +83,7 @@ CloudFront (CDN)
 - **Active projects list** — sorted by urgency (overdue first, at-risk second)
 - **Pipeline breakdown** — project counts by status
 - **Over-allocated members panel** — members on 2+ active projects with utilization bars
-- **Global search** — teams, projects, members, achievements
+- **Global search** — teams, projects, members
 
 ### Resource Management
 - **Utilization bars** per member — colored by load level (grey/green/yellow/red)
@@ -95,7 +95,7 @@ CloudFront (CDN)
 - **JWT authentication** — 60-minute access tokens + 7-day refresh tokens
 - **4 RBAC roles** — Viewer, Contributor, Manager, Admin
 - **PBKDF2-SHA256 password hashing** — 260,000 iterations, NIST SP 800-132 compliant
-- **Brute force protection** — 5 failed attempts triggers 15-minute lockout
+- **Brute force protection** — 5 failed attempts trigger a 15-minute lockout
 - **Soft delete** — nothing permanently removed, full recovery possible
 - **Audit log** — every mutation logged with actor, action, and timestamp
 
@@ -270,13 +270,30 @@ git push
 ## Tests
 
 ```bash
-# Backend — 20 tests
+# Backend unit + error handling tests
 cd backend/team-service
 pytest test_function.py -v
 
-# Frontend — 12 tests
+# Backend integration tests (real deployed API + DB)
+RUN_INTEGRATION=1 API_BASE_URL=https://d3njdoiji9c3r2.cloudfront.net pytest test_integration_api.py -v
+
+# Backend coverage gate (80%+)
+pip install -r requirements-dev.txt
+pytest test_function.py --cov=function --cov=auth --cov-report=term-missing --cov-fail-under=80
+
+# Frontend component/API-mocked tests
 cd frontend
 npm test -- --run
+
+# Frontend coverage gate (80%+)
+npm run test:coverage
+
+# End-to-end test (Cypress)
+CYPRESS_BASE_URL=http://localhost:3000 npm run e2e
+
+# Load test (Artillery)
+cd ..
+API_BASE_URL=https://d3njdoiji9c3r2.cloudfront.net npx artillery run tests/performance/artillery-load.yml
 ```
 
 ### Test Coverage
@@ -286,6 +303,12 @@ npm test -- --run
 - Member validation (missing team, invalid ID)
 - Achievement filters
 - Health checks and CORS
+- Frontend API service mocking tests (`frontend/src/tests/api.test.js`)
+- E2E critical path: login to dashboard (`frontend/cypress/e2e/auth-and-dashboard.cy.js`)
+- Integration API checks against deployed endpoints (`backend/team-service/test_integration_api.py`)
+
+### Test Results Documentation
+- Manual and automated performance run results: `docs/performance-test-results.md`
 
 ---
 

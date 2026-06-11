@@ -29,7 +29,7 @@ Click on the **fork** button at the top of the page. This will create a copy of 
 Run the following command in a terminal/command line:
 
 ```bash
-$ git clone https://github.com/YOUR_GITHUB_USRERNAME/REPO_NAME.git
+$ git clone https://github.com/YOUR_GITHUB_USERNAME/REPO_NAME.git
 ```
 
 <br />
@@ -65,8 +65,10 @@ $ git commit -s ...
 To sign-off historical commits missing a signature, you can run:
 
 ```bash
-$ git rebase --signoff HEAD~4 // ℹ️ Add sign-off on the last 4 commits...
+$ git rebase --signoff HEAD~4
 ```
+
+This command adds DCO sign-off lines to your last four commits.
 
 You can verify that you have successfully signed a commit:
 
@@ -77,7 +79,7 @@ commit 816e57945c8f4f15b0bbd27e088b7d2bd74df34b
 Author: Jane Doe <jane.doe@example.com>
 Date:   Mon Mar 17 21:52:11 2008 -0700
 
-Signed-off-by: Jane Doe <jane.doe@example.com> // Waheey! 🎉 You agreed to the DCO...
+Signed-off-by: Jane Doe <jane.doe@example.com>
 ```
 
 ## 🤝 Responsible Vulnerability Disclosure

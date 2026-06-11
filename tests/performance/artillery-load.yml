@@ -1,0 +1,37 @@
+config:
+  target: "{{ $processEnvironment.API_BASE_URL || 'https://d3njdoiji9c3r2.cloudfront.net' }}"
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: warmup
+    - duration: 120
+      arrivalRate: 15
+      name: sustained_load
+    - duration: 60
+      arrivalRate: 30
+      name: peak_load
+  defaults:
+    headers:
+      Content-Type: application/json
+
+scenarios:
+  - name: login-and-read-projects
+    flow:
+      - post:
+          url: "/api/team-service/auth/login"
+          json:
+            username: "{{ $processEnvironment.LOAD_TEST_USERNAME || 'admin' }}"
+            password: "{{ $processEnvironment.LOAD_TEST_PASSWORD || 'admin123' }}"
+          capture:
+            - json: "$.access_token"
+              as: accessToken
+            - json: "$.token"
+              as: legacyToken
+      - get:
+          url: "/api/team-service/projects"
+          headers:
+            Authorization: "Bearer {{ accessToken || legacyToken }}"
+      - get:
+          url: "/api/team-service/stats"
+          headers:
+            Authorization: "Bearer {{ accessToken || legacyToken }}"

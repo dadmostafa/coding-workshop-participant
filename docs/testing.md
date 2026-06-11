@@ -9,79 +9,71 @@ covering backend testing, frontend testing, and performance testing.
 
 ### Backend Testing
 
-1. Unit Tests: Test individual Lambda functions in isolation.
-2. Integration Tests: Test API endpoints with actual database connections.
-3. Error Handling Tests: Test validation and error scenarios for CRUD operations.
+1. Unit Tests: Test individual Lambda handlers in isolation with mocks.
+2. Integration Tests: Test deployed API endpoints backed by the real database.
+3. Error Handling Tests: Validate 4xx/5xx scenarios for CRUD flows.
+
+```sh
+# Unit + error handling tests
+cd backend/team-service
+pytest test_function.py -v
+
+# Coverage gate for backend components (80%+)
+pip install -r requirements-dev.txt
+pytest test_function.py --cov=function --cov=auth --cov-report=term-missing --cov-fail-under=80
+
+# Real API integration tests (set RUN_INTEGRATION=1 explicitly)
+RUN_INTEGRATION=1 \
+API_BASE_URL=https://d3njdoiji9c3r2.cloudfront.net \
+pytest test_integration_api.py -v
+```
 
 ### Frontend Testing
 
-1. Component Tests: Test React components using Jest and React Testing Library.
-2. API Integration Tests: Test API service functions with mocked responses.
-3. End-to-End Tests: Test complete user workflows using tools like Cypress or Selenium.
+1. Component Tests: React component behavior and rendering.
+2. API Integration Tests: API service layer tested with mocked responses.
+3. End-to-End Tests: Critical user flows executed in a browser.
+
+```sh
+cd frontend
+
+# Unit/component + mocked API tests
+npm test -- --run
+
+# Frontend coverage gate (80%+)
+npm run test:coverage
+
+# E2E flow (login -> dashboard)
+CYPRESS_BASE_URL=http://localhost:3000 npm run e2e
+```
 
 ### Performance Testing
 
-1. Load Testing: Test API endpoints under high concurrent load using tools like Artillery or JMeter.
-2. Performance Monitoring: Monitor response times and resource usage to ensure optimal performance.
+1. Load Testing: Simulate concurrent traffic against authentication and core read endpoints.
+2. Performance Monitoring: Capture latency percentiles, RPS, and error rates in a report.
+
+```sh
+API_BASE_URL=https://d3njdoiji9c3r2.cloudfront.net \
+LOAD_TEST_USERNAME=admin \
+LOAD_TEST_PASSWORD=admin123 \
+npx artillery run tests/performance/artillery-load.yml
+```
+
+Record outputs in `docs/performance-test-results.md`.
 
 ### Test Coverage Goals
 
-* Backend Components: 80%+ code coverage
-* Frontend Components: 80%+ code coverage
-* API Endpoints: 90%+ coverage for all CRUD operations
-* Error Handling: 90%+ coverage for validation and error cases
-* Critical User Paths: 100% E2E test coverage
+* Backend Components: 80%+ code coverage (enforced by `--cov-fail-under=80`)
+* Frontend Components: 80%+ code coverage (configured in Vitest coverage thresholds)
+* API Endpoints: 90%+ coverage for CRUD endpoints (unit + integration suite target)
+* Error Handling: 90%+ coverage for validation/error cases
+* Critical User Paths: 100% E2E coverage for defined smoke paths
 
-### Examples: How To Test
+### Notes
 
-#### Local Development
-
-To test your backend changes locally:
-
-```sh
-# Example: Get all records for {{service-name}}
-curl -X GET https://localhost:3001/api/{{service-name}} \
-     -H "Content-Type: application/json"
-```
-
-Replace `{{service-name}}` with corresponding service name
-(e.g. `python-service`).
-
-To tail backend logs in real-time:
-
-```sh
-# Example: Get logs for {{service-name}}
-AWS_ENDPOINT_URL="http://localhost:4566" \
-    aws logs tail /aws/lambda/{{function-name}} \
-        --follow --format short --color on
-```
-
-Replace `{{function-name}}` with corresponding service name
-(e.g. `coding-workshop-python-service-abcd1234`).
-
-#### Cloud Deployment
-
-To test your backend changes in the cloud:
-
-```sh
-# Example: Get all records for {{service-name}}
-curl -X GET https://{API_BASE_URL}/api/{{service-name}} \
-     -H "Content-Type: application/json"
-```
-
-Replace `{{service-name}}` with corresponding service name
-(e.g. `python-service`).
-
-To tail backend logs in real-time:
-
-```sh
-# Example: Get logs for {{service-name}}
-aws logs tail /aws/lambda/{{function-name}} \
-    --follow --format short --color on
-```
-
-Replace `{{function-name}}` with corresponding service name
-(e.g. `coding-workshop-python-service-abcd1234`).
+1. Integration tests are opt-in so normal local test runs remain fast.
+2. E2E tests assume seeded demo credentials are available.
+3. Performance runs should be executed against a stable deployed environment, not while deploying.
 
 ## Navigation Links
 
