@@ -240,7 +240,6 @@ function DashboardSearch() {
     { key: 'projects',     label: 'Projects',     color: '#A29BFE', nav: id => go(`/projects/${id}`) },
     { key: 'teams',        label: 'Teams',        color: '#6BCB77', nav: id => go(`/teams/${id}`)    },
     { key: 'members',      label: 'Members',      color: '#4ECDC4', nav: ()  => go('/members')       },
-    { key: 'achievements', label: 'Achievements', color: '#FFD166', nav: ()  => go('/achievements')  },
   ]
 
   return (
@@ -260,7 +259,7 @@ function DashboardSearch() {
             : <Search sx={{ color: '#8b8fa8', fontSize: 18, flexShrink: 0 }} />
           }
           <InputBase
-            placeholder="Search projects, teams, members, achievements…"
+            placeholder="Search projects, teams, members…"
             value={q} onChange={handleChange}
             onFocus={() => q.length >= 2 && setOpen(true)}
             sx={{ flex: 1, fontSize: '0.9rem',
@@ -690,7 +689,6 @@ export default function DashboardPage() {
                 {[
                   { label: 'Teams',        value: stats?.total_teams,        color: '#6BCB77', path: '/teams',        icon: Groups  },
                   { label: 'Members',      value: stats?.total_members,      color: '#4ECDC4', path: '/members',      icon: Person  },
-                  { label: 'Achievements', value: stats?.total_achievements, color: '#FFD166', path: '/achievements', icon: EmojiEvents },
                 ].map(item => (
                   <Box key={item.label} onClick={() => navigate(item.path)} sx={{
                     display: 'flex', alignItems: 'center', gap: 1.5,

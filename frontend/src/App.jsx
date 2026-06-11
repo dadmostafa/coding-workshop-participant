@@ -9,7 +9,6 @@ import DashboardPage    from './pages/DashboardPage'
 import TeamsPage        from './pages/TeamsPage'
 import TeamDetailPage   from './pages/TeamDetailPage'
 import MembersPage      from './pages/MembersPage'
-import AchievementsPage from './pages/AchievementsPage'
 import UsersPage        from './pages/UsersPage'
 import ActivityPage     from './pages/ActivityPage'
 import AuditPage        from './pages/AuditPage'
@@ -200,7 +199,6 @@ export default function App() {
             <Route path="teams"         element={<PageWrapper><TeamsPage /></PageWrapper>} />
             <Route path="teams/:id"     element={<PageWrapper><TeamDetailPage /></PageWrapper>} />
             <Route path="members"       element={<PageWrapper><MembersPage /></PageWrapper>} />
-            <Route path="achievements"  element={<PageWrapper><AchievementsPage /></PageWrapper>} />
             <Route path="projects"      element={<PageWrapper><ProjectsPage /></PageWrapper>} />
             <Route path="projects/:id"  element={<PageWrapper><ProjectDetailPage /></PageWrapper>} />
             <Route path="activity"      element={<PageWrapper><ActivityPage /></PageWrapper>} />

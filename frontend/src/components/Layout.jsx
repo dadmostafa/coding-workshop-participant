@@ -6,7 +6,7 @@ import {
   Chip, Drawer,
 } from '@mui/material'
 import {
-  Dashboard, Groups, Person, EmojiEvents,
+  Dashboard, Groups, Person,
   AdminPanelSettings, Logout,
   Timeline, Security, FolderOpen, Menu as MenuIcon, Work,
 } from '@mui/icons-material'
@@ -22,7 +22,6 @@ const NAV = [
   { label: 'Dashboard',  path: '/',          icon: <Dashboard   sx={{ fontSize: 16 }} /> },
   { label: 'Projects',   path: '/projects',  icon: <FolderOpen  sx={{ fontSize: 16 }} /> },
   { label: 'Resources',  path: '/members',   icon: <Work        sx={{ fontSize: 16 }} /> },
-  { label: 'Achievements', path: '/achievements', icon: <EmojiEvents sx={{ fontSize: 16 }} /> },
   { label: 'Activity',   path: '/activity',  icon: <Timeline    sx={{ fontSize: 16 }} /> },
 ]
 
